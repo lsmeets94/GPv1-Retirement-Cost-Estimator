@@ -1,0 +1,25 @@
+{
+  "name": "gpv1-gpv2-billing-estimator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w @gpv2-estimator/core && npm run build -w @gpv2-estimator/api && npm run build -w @gpv2-estimator/web",
+    "dev": "npm run dev -w @gpv2-estimator/web",
+    "test": "npm run test -w @gpv2-estimator/core",
+    "typecheck": "npm run build -w @gpv2-estimator/core && npm run typecheck -w @gpv2-estimator/api && npm run typecheck -w @gpv2-estimator/web",
+    "lint": "npm run lint -w @gpv2-estimator/web",
+    "audit:prod": "npm audit --omit=dev"
+  },
+  "devDependencies": {
+    "@emnapi/core": "^1.11.1",
+    "@emnapi/runtime": "^1.11.1",
+    "@types/node": "^26.0.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
+  }
+}

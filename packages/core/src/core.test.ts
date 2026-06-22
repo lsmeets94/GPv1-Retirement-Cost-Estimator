@@ -1,0 +1,343 @@
+import { describe, expect, it } from "vitest";
+import {
+  applyDiscount,
+  buildRetailPricesUrl,
+  calculateResultLine,
+  classifyConfidence,
+  createSampleCsv,
+  fetchAllRetailPricePages,
+  isBlobStorageLine,
+  matchMeter,
+  MAX_CSV_ROWS,
+  manualInputToUsage,
+  parseUsageCsv,
+  resultsToCsv,
+  summarizePortfolio,
+  summarizePortfolioAssessment,
+  summarizeCosts
+} from "./index";
+import type { DiscountSettings, PortfolioAssessmentInput, PriceMeter, UsageLineItem } from "./types";
+
+const usage: UsageLineItem = {
+  id: "u1",
+  source: "csv",
+  serviceName: "Storage",
+  product: "General Purpose v1 Blob Storage",
+  meterCategory: "Storage",
+  meterSubcategory: "Blob Storage",
+  meterName: "Hot LRS Data Stored",
+  skuName: "LRS Hot",
+  region: "eastus",
+  quantity: 100,
+  unit: "1 GB/Month",
+  unitPrice: 0.02,
+  cost: 2,
+  currency: "USD",
+  redundancy: "LRS",
+  accessTier: "Hot",
+  included: true,
+  modeled: true,
+  notes: []
+};
+
+const meter = (overrides: Partial<PriceMeter>): PriceMeter => ({
+  currencyCode: "USD",
+  tierMinimumUnits: 0,
+  retailPrice: 0.018,
+  unitPrice: 0.018,
+  armRegionName: "eastus",
+  meterId: "meter-1",
+  meterName: "Hot LRS Data Stored",
+  productName: "General Block Blob v2",
+  skuName: "LRS Hot",
+  serviceName: "Storage",
+  serviceFamily: "Storage",
+  unitOfMeasure: "1 GB/Month",
+  type: "Consumption",
+  ...overrides
+});
+
+const discounts: DiscountSettings = {
+  globalDiscountPercent: 10,
+  gpV1DiscountPercent: 5,
+  gpV2DiscountPercent: 15,
+  sameDiscountForBoth: false
+};
+
+const defaultManualInput = {
+  region: "eastus",
+  currency: "USD",
+  redundancy: "LRS" as const,
+  accessTier: "Hot" as const,
+  capacityGb: 100,
+  writeOperations: 0,
+  readOperations: 0,
+  listContainerOperations: 0,
+  retrievalGb: 0,
+  writeGb: 0,
+  geoReplicationGb: 0,
+  allOtherOperations: 0,
+  deleteOperations: 0,
+  deletedDataGb: 0,
+  averageDaysRetainedBeforeDelete: 0,
+  dataGeoPriorityReplicationGb: 0
+};
+
+describe("pricing API helpers", () => {
+  it("builds a filtered Azure Retail Prices API URL", () => {
+    const url = buildRetailPricesUrl({
+      region: "eastus",
+      currency: "USD",
+      product: "Blob",
+      meterName: "Data Stored"
+    });
+
+    const decoded = decodeURIComponent(url).replace(/\+/g, " ");
+    expect(url).toContain("api-version=2023-01-01-preview");
+    expect(decoded).toContain("serviceFamily eq 'Storage'");
+    expect(decoded).toContain("armRegionName eq 'eastus'");
+    expect(decoded).toContain("contains(productName, 'Blob')");
+  });
+
+  it("follows pagination", async () => {
+    const pages: Record<string, { Items: number[]; NextPageLink?: string | null }> = {
+      first: { Items: [1], NextPageLink: "second" },
+      second: { Items: [2], NextPageLink: null }
+    };
+
+    await expect(fetchAllRetailPricePages("first", async (url) => pages[url])).resolves.toEqual([1, 2]);
+  });
+});
+
+describe("classification and matching", () => {
+  it("detects Blob Storage rows and excludes non-Blob services", () => {
+    expect(isBlobStorageLine(usage)).toBe(true);
+    expect(isBlobStorageLine({ ...usage, product: "Azure Files", meterSubcategory: "Files", meterName: "LRS Data Stored" })).toBe(false);
+  });
+
+  it("classifies ambiguous candidate sets as needing confirmation", () => {
+    expect(classifyConfidence(98, 1)).toBe("Exact match");
+    expect(classifyConfidence(88, 2)).toBe("Strong match");
+    expect(classifyConfidence(50, 3)).toBe("Needs review");
+    expect(classifyConfidence(10, 1)).toBe("Unmatched");
+  });
+
+  it("matches the closest GPv2 public meter", () => {
+    const match = matchMeter(usage, [meter({}), meter({ armRegionName: "westus", meterId: "other" })], "gpv2");
+    expect(match.confidence).toBe("Exact match");
+    expect(match.meter?.meterId).toBe("meter-1");
+  });
+
+  it("models GPv1 as Storage kind and GPv2 as StorageV2 target tier", () => {
+    const [capacity] = manualInputToUsage({ ...defaultManualInput, accessTier: "Cool" });
+    const storageKindMeter = meter({ productName: "General Block Blob", meterName: "LRS Data Stored", skuName: "Standard LRS", meterId: "storage-kind" });
+    const storageV2CoolMeter = meter({ productName: "General Block Blob v2", meterName: "Cool LRS Data Stored", skuName: "Cool LRS", meterId: "storage-v2-cool" });
+    const storageV2HotMeter = meter({ productName: "General Block Blob v2", meterName: "Hot LRS Data Stored", skuName: "Hot LRS", meterId: "storage-v2-hot" });
+
+    expect(capacity.meterName).toBe("LRS Data Stored");
+    expect(capacity.accessTier).toBe("Cool");
+    expect(capacity.sourceAccountKind).toBe("Storage");
+    expect(capacity.targetAccountKind).toBe("StorageV2");
+    expect(matchMeter(capacity, [storageV2CoolMeter, storageKindMeter], "gpv1").meter?.meterId).toBe("storage-kind");
+    expect(matchMeter(capacity, [storageV2HotMeter, storageV2CoolMeter], "gpv2").meter?.meterId).toBe("storage-v2-cool");
+  });
+
+  it("includes StorageV2-only meters with GPv1 cost set to zero", () => {
+    const replication = manualInputToUsage({ ...defaultManualInput, writeGb: 25, redundancy: "GRS" }).find((item) => item.id === "manual-geo-transfer")!;
+    const gpV1 = matchMeter(replication, [meter({ productName: "General Block Blob", meterName: "GRS Data Stored", skuName: "Standard GRS" })], "gpv1");
+    const gpV2 = matchMeter(
+      replication,
+      [meter({ productName: "Blob Features", meterName: "Data Geo Priority Replication GRS Data Replicated", skuName: "Data Geo Priority Replication GRS", unitOfMeasure: "1 GB", unitPrice: 0.01 })],
+      "gpv2"
+    );
+    const row = calculateResultLine(replication, gpV1, gpV2, { ...discounts, sameDiscountForBoth: true, globalDiscountPercent: 0 });
+
+    expect(gpV1.confidence).toBe("Unmatched");
+    expect(gpV2.confidence).toBe("Exact match");
+    expect(row.includeInTotals).toBe(true);
+    expect(row.gpV1ListCost).toBe(0);
+    expect(row.gpV2ListCost).toBeCloseTo(0.25);
+  });
+
+  it("automatically derives geo-replication GB from uploaded data for geo-redundant accounts", () => {
+    const rows = manualInputToUsage({ ...defaultManualInput, redundancy: "GRS", writeGb: 42 });
+    const replication = rows.find((item) => item.id === "manual-geo-transfer");
+
+    expect(replication?.quantity).toBe(42);
+    expect(replication?.meterName).toBe("Data Geo Priority Replication GRS Data Replicated");
+  });
+
+  it("does not add geo-replication transfer for locally redundant accounts", () => {
+    const rows = manualInputToUsage({ ...defaultManualInput, redundancy: "LRS", writeGb: 42 });
+
+    expect(rows.find((item) => item.id === "manual-geo-transfer")).toBeUndefined();
+  });
+
+  it("does not add early deletion charges for Hot tier", () => {
+    const rows = manualInputToUsage({ ...defaultManualInput, accessTier: "Hot", deletedDataGb: 100, averageDaysRetainedBeforeDelete: 1 });
+
+    expect(rows.find((item) => item.id === "manual-early-delete")).toBeUndefined();
+  });
+
+  it("prorates early deletion quantity by remaining retention days", () => {
+    const rows = manualInputToUsage({ ...defaultManualInput, accessTier: "Cool", deletedDataGb: 100, averageDaysRetainedBeforeDelete: 21 });
+    const earlyDelete = rows.find((item) => item.id === "manual-early-delete");
+
+    expect(earlyDelete?.quantity).toBe(30);
+    expect(earlyDelete?.meterName).toBe("Cool LRS Early Delete");
+  });
+
+  it("does not borrow Cool or Cold meters when StorageV2 target tier is Hot", () => {
+    const hotRetrieval: UsageLineItem = {
+      ...usage,
+      id: "hot-retrieval",
+      meterName: "Data Retrieval",
+      quantity: 50,
+      unit: "1 GB",
+      redundancy: "GRS",
+      accessTier: "Hot",
+      skuName: "GRS"
+    };
+
+    const match = matchMeter(
+      hotRetrieval,
+      [
+        meter({ productName: "General Block Blob v2", meterName: "Cool Data Retrieval", skuName: "Cool GRS", unitOfMeasure: "1 GB", unitPrice: 0.01 }),
+        meter({ productName: "General Block Blob v2", meterName: "Cold GRS Data Retrieval", skuName: "Cold GRS", unitOfMeasure: "1 GB", unitPrice: 0.03 })
+      ],
+      "gpv2"
+    );
+    const row = calculateResultLine(hotRetrieval, { confidence: "Unmatched", score: 0, candidates: [], notes: [] }, match, discounts);
+
+    expect(match.meter).toBeUndefined();
+    expect(match.confidence).toBe("Strong match");
+    expect(row.gpV2ListCost).toBe(0);
+    expect(row.notes.join(" ")).toContain("No Hot-tier StorageV2 public meter");
+  });
+});
+
+describe("calculation behavior", () => {
+  it("applies bounded discounts", () => {
+    expect(applyDiscount(10, 15)).toBe(8.5);
+    expect(applyDiscount(10, 150)).toBe(0);
+    expect(applyDiscount(10, -20)).toBe(10);
+  });
+
+  it("calculates included rows and totals", () => {
+    const gpV1 = matchMeter(usage, [meter({ productName: "General Block Blob", meterName: "LRS Data Stored", skuName: "Standard LRS", unitPrice: 0.02 })], "gpv1");
+    const gpV2 = matchMeter(usage, [meter({ unitPrice: 0.018 })], "gpv2");
+    const row = calculateResultLine(usage, gpV1, gpV2, discounts);
+    const summary = summarizeCosts([row]);
+
+    expect(row.includeInTotals).toBe(true);
+    expect(summary.gpV1DiscountedTotal).toBeCloseTo(1.9);
+    expect(summary.gpV2DiscountedTotal).toBeCloseTo(1.53);
+    expect(summary.annualizedDelta).toBeCloseTo(-4.44);
+  });
+
+  it("keeps invalid numeric values out of summary totals", () => {
+    const gpV1 = matchMeter(usage, [meter({ productName: "General Block Blob", meterName: "LRS Data Stored", skuName: "Standard LRS", unitPrice: 0.02 })], "gpv1");
+    const gpV2 = matchMeter(usage, [meter({ unitPrice: 0.018 })], "gpv2");
+    const row = calculateResultLine(usage, gpV1, gpV2, { ...discounts, globalDiscountPercent: Number.NaN });
+    const summary = summarizeCosts([{ ...row, gpV1DiscountedCost: Number.NaN, gpV2DiscountedCost: 2 }]);
+
+    expect(summary.gpV1DiscountedTotal).toBe(0);
+    expect(summary.gpV2DiscountedTotal).toBe(2);
+    expect(summary.discountedDeltaPercent).toBe(0);
+  });
+});
+
+describe("CSV parsing", () => {
+  it("parses the sample CSV and excludes non-Blob lines by default", () => {
+    const result = parseUsageCsv(createSampleCsv());
+    expect(result.errors).toEqual([]);
+    expect(result.rows).toHaveLength(11);
+    expect(result.rows.filter((row) => row.modeled)).toHaveLength(8);
+    expect(result.rows.filter((row) => !row.modeled)).toHaveLength(3);
+    expect(result.rows.find((row) => row.meterName === "Data Geo Priority Replication GRS Data Replicated")?.modeled).toBe(true);
+    expect(result.rows.find((row) => row.meterName === "Blob Inventory")?.notes.join(" ")).toContain("Requires Review");
+    expect(result.rows.find((row) => row.product === "Azure Files")?.modeled).toBe(false);
+    expect(result.rows.find((row) => row.product === "Queue Storage")?.modeled).toBe(false);
+    expect(result.rows.find((row) => row.product === "Table Storage")?.modeled).toBe(false);
+  });
+
+  it("accepts common Azure Cost Management export column names", () => {
+    const csv = [
+      "UsageDate,ConsumedService,ProductName,MeterCategory,MeterSubCategory,MeterName,SkuName,ResourceLocation,UsageQuantity,UnitOfMeasure,EffectivePrice,CostInBillingCurrency,BillingCurrency,ResourceName",
+      "2026-05-01,Storage,General Block Blob,Storage,Blob Storage,LRS Data Stored,Standard LRS,eastus,100,1 GB/Month,0.02,2,USD,prodgpv1"
+    ].join("\n");
+    const result = parseUsageCsv(csv);
+
+    expect(result.errors).toEqual([]);
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0].product).toBe("General Block Blob");
+    expect(result.rows[0].region).toBe("eastus");
+    expect(result.rows[0].modeled).toBe(true);
+  });
+
+  it("limits oversized CSV row counts", () => {
+    const header = "UsageDate,ConsumedService,ProductName,MeterCategory,MeterSubCategory,MeterName,SkuName,ResourceLocation,UsageQuantity,UnitOfMeasure,EffectivePrice,CostInBillingCurrency,BillingCurrency,ResourceName";
+    const row = "2026-05-01,Storage,General Block Blob,Storage,Blob Storage,LRS Data Stored,Standard LRS,eastus,100,1 GB/Month,0.02,2,USD,prodgpv1";
+    const result = parseUsageCsv([header, ...Array.from({ length: MAX_CSV_ROWS + 1 }, () => row)].join("\n"));
+
+    expect(result.rows).toHaveLength(MAX_CSV_ROWS);
+    expect(result.errors.join(" ")).toContain("Only the first");
+  });
+
+  it("escapes spreadsheet formula controls in CSV export", () => {
+    const gpV1 = matchMeter(usage, [meter({ productName: "General Block Blob", meterName: "LRS Data Stored", skuName: "Standard LRS", unitPrice: 0.02 })], "gpv1");
+    const gpV2 = matchMeter(usage, [meter({ unitPrice: 0.018 })], "gpv2");
+    const row = calculateResultLine({ ...usage, meterName: "=HYPERLINK(\"https://example.com\")" }, gpV1, gpV2, discounts);
+    const csv = resultsToCsv([row]);
+
+    expect(csv).toContain("'=HYPERLINK");
+  });
+});
+
+describe("portfolio assessment", () => {
+  const portfolioInput = (overrides: Partial<PortfolioAssessmentInput> = {}): PortfolioAssessmentInput => {
+    const gpV1 = matchMeter(usage, [meter({ productName: "General Block Blob", meterName: "LRS Data Stored", skuName: "Standard LRS", unitPrice: 0.02 })], "gpv1");
+    const gpV2 = matchMeter(usage, [meter({ unitPrice: 0.015 })], "gpv2");
+    const result = calculateResultLine({ ...usage, quantity: 1000 }, gpV1, gpV2, { ...discounts, sameDiscountForBoth: true, globalDiscountPercent: 0 });
+
+    return {
+      id: "assessment-1",
+      name: "Production GPv1",
+      storageAccountName: "prodgpv1",
+      region: "eastus",
+      redundancy: "LRS",
+      accessTier: "Hot",
+      currency: "USD",
+      capacityGb: 5000,
+      results: [result],
+      createdAt: "2026-06-01T00:00:00.000Z",
+      updatedAt: "2026-06-01T00:00:00.000Z",
+      status: "Active",
+      ...overrides
+    };
+  };
+
+  it("summarizes an assessment with priority, risk, and recommendations", () => {
+    const summary = summarizePortfolioAssessment(portfolioInput({ capacityGb: 120000, redundancy: "GRS" }));
+
+    expect(summary.gpV1MonthlyCost).toBeCloseTo(20);
+    expect(summary.gpV2MonthlyCost).toBeCloseTo(15);
+    expect(summary.annualImpact).toBeCloseTo(-60);
+    expect(summary.priority).not.toBeUndefined();
+    expect(summary.risk).not.toBeUndefined();
+    expect(summary.recommendations.join(" ")).toContain("geo-redundancy");
+  });
+
+  it("summarizes active portfolio totals and excludes archived assessments from totals", () => {
+    const portfolio = summarizePortfolio([
+      portfolioInput({ id: "a", capacityGb: 100 }),
+      portfolioInput({ id: "b", capacityGb: 200, status: "Archived" })
+    ]);
+
+    expect(portfolio.totalAccounts).toBe(2);
+    expect(portfolio.activeAccounts).toBe(1);
+    expect(portfolio.archivedAssessments).toHaveLength(1);
+    expect(portfolio.totalCapacityGb).toBe(100);
+    expect(portfolio.gpV1MonthlyCost).toBeCloseTo(20);
+  });
+});

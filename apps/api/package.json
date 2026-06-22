@@ -1,0 +1,19 @@
+{
+  "name": "@gpv2-estimator/api",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/functions/*.js",
+  "scripts": {
+    "build": "esbuild ./src/functions/pricesSearch.ts --bundle --platform=node --target=node20 --format=esm --external:@azure/functions --outdir=dist/functions",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "func start"
+  },
+  "dependencies": {
+    "@azure/functions": "^4.7.2"
+  },
+  "devDependencies": {
+    "@gpv2-estimator/core": "file:../../packages/core",
+    "azure-functions-core-tools": "^4.0.7030",
+    "esbuild": "^0.28.1"
+  }
+}
