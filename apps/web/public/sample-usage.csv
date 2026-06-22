@@ -1,0 +1,12 @@
+Billing period,Service name,Product,Meter category,Meter subcategory,Meter name,SKU name,Region,Quantity,Unit,Unit price,Cost,Currency,Tags or storage account name
+2026-05,Storage,General Block Blob v1,Storage,Blob Storage,GRS Data Stored,Standard GRS,eastus,1024,1 GB/Month,0.0528,54.07,USD,account=prodgpv1;scenario=capacity
+2026-05,Storage,General Block Blob v1,Storage,Blob Storage,Write Operations,Standard GRS,eastus,25,10K,0.00036,0.01,USD,account=prodgpv1;scenario=transactions
+2026-05,Storage,General Block Blob v1,Storage,Blob Storage,Read Operations,Standard GRS,eastus,100,10K,0.00036,0.04,USD,account=prodgpv1;scenario=transactions
+2026-05,Storage,General Block Blob v1,Storage,Blob Storage,List and Create Container Operations,Standard GRS,eastus,2,10K,0.00036,0.00,USD,account=prodgpv1;scenario=list
+2026-05,Storage,General Block Blob v1,Storage,Blob Storage,Data Retrieval,Standard GRS,eastus,50,1 GB,0,0,USD,account=prodgpv1;scenario=retrieval
+2026-05,Storage,General Block Blob v1,Storage,Blob Storage,Data Write,Standard GRS,eastus,25,1 GB,0,0,USD,account=prodgpv1;scenario=write
+2026-05,Storage,Blob Features,Storage,Blob Storage,Data Geo Priority Replication GRS Data Replicated,Data Geo Priority Replication GRS,eastus,25,1 GB,0,0,USD,account=prodgpv1;scenario=gpv2-only-replication
+2026-05,Storage,Blob Features,Storage,Blob Storage,Blob Inventory,Blob Inventory,eastus,1,1M,0,0,USD,account=prodgpv1;scenario=requires-review
+2026-05,Storage,Azure Files,Storage,Files,LRS Data Stored,Standard LRS,eastus,500,1 GB/Month,0.06,30,USD,account=fileacct;scenario=excluded-files
+2026-05,Storage,Queue Storage,Storage,Queues,Queue Operations,Standard LRS,eastus,10,10K,0.004,0.04,USD,account=queueacct;scenario=excluded-queues
+2026-05,Storage,Table Storage,Storage,Tables,Table Operations,Standard LRS,eastus,8,10K,0.004,0.03,USD,account=tableacct;scenario=excluded-tables

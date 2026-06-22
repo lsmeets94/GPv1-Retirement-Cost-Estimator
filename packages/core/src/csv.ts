@@ -1,0 +1,305 @@
+import Papa from "papaparse";
+import { classifyUsage } from "./classification";
+import { inferAccessTier, inferRedundancy, isBlobStorageLine } from "./mapping";
+import type { UsageLineItem } from "./types";
+
+export const requiredCsvColumns = [
+  "Billing period",
+  "Service name",
+  "Product",
+  "Meter category",
+  "Meter subcategory",
+  "Meter name",
+  "SKU name",
+  "Region",
+  "Quantity",
+  "Unit",
+  "Unit price",
+  "Cost",
+  "Currency",
+  "Tags or storage account name"
+];
+export const MAX_CSV_CHARACTERS = 5_000_000;
+export const MAX_CSV_ROWS = 5_000;
+
+export interface CsvParseResult {
+  rows: UsageLineItem[];
+  errors: string[];
+}
+
+const columnAliases: Record<string, string[]> = {
+  "Billing period": ["Billing period", "BillingPeriod", "Date", "UsageDate", "Usage date"],
+  "Service name": ["Service name", "ServiceName", "ConsumedService", "Service"],
+  Product: ["Product", "ProductName", "Product name"],
+  "Meter category": ["Meter category", "MeterCategory", "Meter category name"],
+  "Meter subcategory": ["Meter subcategory", "MeterSubCategory", "Meter subcategory", "MeterSubcategory"],
+  "Meter name": ["Meter name", "MeterName"],
+  "SKU name": ["SKU name", "SkuName", "SKUName", "Sku", "SKU"],
+  Region: ["Region", "ResourceLocation", "Resource location", "ResourceLocationNormalized", "MeterRegion"],
+  Quantity: ["Quantity", "UsageQuantity", "Usage quantity"],
+  Unit: ["Unit", "UnitOfMeasure", "Unit of measure", "PricingUnitOfMeasure"],
+  "Unit price": ["Unit price", "UnitPrice", "EffectivePrice", "PayGPrice"],
+  Cost: ["Cost", "CostInBillingCurrency", "PreTaxCost", "CostInPricingCurrency"],
+  Currency: ["Currency", "BillingCurrency", "BillingCurrencyCode", "PricingCurrency"],
+  "Tags or storage account name": ["Tags or storage account name", "Tags", "ResourceName", "ResourceId", "InstanceName"]
+};
+
+function resolveHeader(headers: string[], canonical: string): string | undefined {
+  const aliases = columnAliases[canonical] || [canonical];
+  return aliases.find((alias) => headers.includes(alias));
+}
+
+function read(row: Record<string, string>, headers: string[], key: string): string {
+  const resolved = resolveHeader(headers, key);
+  return (resolved ? row[resolved] || "" : "").trim();
+}
+
+function toNumber(value: string): number {
+  const parsed = Number(value.replace(/[$,]/g, ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+export function parseUsageCsv(csvText: string): CsvParseResult {
+  if (csvText.length > MAX_CSV_CHARACTERS) {
+    return { rows: [], errors: [`CSV content is too large. Maximum supported size is ${MAX_CSV_CHARACTERS.toLocaleString()} characters.`] };
+  }
+
+  const parsed = Papa.parse<Record<string, string>>(csvText, {
+    header: true,
+    skipEmptyLines: true,
+    transformHeader: (header) => header.trim()
+  });
+
+  const headers = parsed.meta.fields || [];
+  const errors = requiredCsvColumns
+    .filter((column) => !resolveHeader(headers, column))
+    .map((column) => `Missing required column: ${column}`);
+
+  parsed.errors.forEach((error) => errors.push(`CSV parse error on row ${error.row ?? "unknown"}: ${error.message}`));
+  if (parsed.data.length > MAX_CSV_ROWS) {
+    errors.push(`CSV has ${parsed.data.length.toLocaleString()} rows. Only the first ${MAX_CSV_ROWS.toLocaleString()} rows were imported.`);
+  }
+
+  const rows = parsed.data.slice(0, MAX_CSV_ROWS).map((row, index) => {
+    const serviceName = read(row, headers, "Service name");
+    const product = read(row, headers, "Product");
+    const meterCategory = read(row, headers, "Meter category");
+    const meterSubcategory = read(row, headers, "Meter subcategory");
+    const meterName = read(row, headers, "Meter name");
+    const skuName = read(row, headers, "SKU name");
+    const modeled = isBlobStorageLine({ serviceName, product, meterCategory, meterSubcategory, meterName, skuName });
+    const text = `${product} ${meterSubcategory} ${meterName} ${skuName}`;
+    const classification = classifyUsage({ serviceName, product, meterCategory, meterSubcategory, meterName, skuName, quantity: 0, modeled });
+
+    return {
+      id: `csv-${index + 1}`,
+      source: "csv",
+      billingPeriod: read(row, headers, "Billing period"),
+      serviceName,
+      product,
+      meterCategory,
+      meterSubcategory,
+      meterName,
+      skuName,
+      region: read(row, headers, "Region"),
+      quantity: toNumber(read(row, headers, "Quantity")),
+      unit: read(row, headers, "Unit"),
+      unitPrice: toNumber(read(row, headers, "Unit price")),
+      cost: toNumber(read(row, headers, "Cost")),
+      currency: read(row, headers, "Currency") || "USD",
+      storageAccountName: read(row, headers, "Tags or storage account name"),
+      sourceAccountKind: "Storage",
+      targetAccountKind: "StorageV2",
+      redundancy: inferRedundancy(text),
+      accessTier: inferAccessTier(text),
+      included: modeled,
+      modeled,
+      notes: modeled ? [`${classification.status}: ${classification.category}. ${classification.reason}`] : [classification.reason]
+    } satisfies UsageLineItem;
+  });
+
+  return { rows, errors };
+}
+
+export function createSampleCsv(): string {
+  const rows = [
+    requiredCsvColumns.join(","),
+    [
+      "2026-05",
+      "Storage",
+      "General Block Blob v1",
+      "Storage",
+      "Blob Storage",
+      "GRS Data Stored",
+      "Standard GRS",
+      "eastus",
+      "1024",
+      "1 GB/Month",
+      "0.0528",
+      "54.07",
+      "USD",
+      "account=prodgpv1;scenario=capacity"
+    ].join(","),
+    [
+      "2026-05",
+      "Storage",
+      "General Block Blob v1",
+      "Storage",
+      "Blob Storage",
+      "Write Operations",
+      "Standard GRS",
+      "eastus",
+      "25",
+      "10K",
+      "0.00036",
+      "0.01",
+      "USD",
+      "account=prodgpv1;scenario=transactions"
+    ].join(","),
+    [
+      "2026-05",
+      "Storage",
+      "General Block Blob v1",
+      "Storage",
+      "Blob Storage",
+      "Read Operations",
+      "Standard GRS",
+      "eastus",
+      "100",
+      "10K",
+      "0.00036",
+      "0.04",
+      "USD",
+      "account=prodgpv1;scenario=transactions"
+    ].join(","),
+    [
+      "2026-05",
+      "Storage",
+      "General Block Blob v1",
+      "Storage",
+      "Blob Storage",
+      "List and Create Container Operations",
+      "Standard GRS",
+      "eastus",
+      "2",
+      "10K",
+      "0.00036",
+      "0.00",
+      "USD",
+      "account=prodgpv1;scenario=list"
+    ].join(","),
+    [
+      "2026-05",
+      "Storage",
+      "General Block Blob v1",
+      "Storage",
+      "Blob Storage",
+      "Data Retrieval",
+      "Standard GRS",
+      "eastus",
+      "50",
+      "1 GB",
+      "0",
+      "0",
+      "USD",
+      "account=prodgpv1;scenario=retrieval"
+    ].join(","),
+    [
+      "2026-05",
+      "Storage",
+      "General Block Blob v1",
+      "Storage",
+      "Blob Storage",
+      "Data Write",
+      "Standard GRS",
+      "eastus",
+      "25",
+      "1 GB",
+      "0",
+      "0",
+      "USD",
+      "account=prodgpv1;scenario=write"
+    ].join(","),
+    [
+      "2026-05",
+      "Storage",
+      "Blob Features",
+      "Storage",
+      "Blob Storage",
+      "Data Geo Priority Replication GRS Data Replicated",
+      "Data Geo Priority Replication GRS",
+      "eastus",
+      "25",
+      "1 GB",
+      "0",
+      "0",
+      "USD",
+      "account=prodgpv1;scenario=gpv2-only-replication"
+    ].join(","),
+    [
+      "2026-05",
+      "Storage",
+      "Blob Features",
+      "Storage",
+      "Blob Storage",
+      "Blob Inventory",
+      "Blob Inventory",
+      "eastus",
+      "1",
+      "1M",
+      "0",
+      "0",
+      "USD",
+      "account=prodgpv1;scenario=requires-review"
+    ].join(","),
+    [
+      "2026-05",
+      "Storage",
+      "Azure Files",
+      "Storage",
+      "Files",
+      "LRS Data Stored",
+      "Standard LRS",
+      "eastus",
+      "500",
+      "1 GB/Month",
+      "0.06",
+      "30",
+      "USD",
+      "account=fileacct;scenario=excluded-files"
+    ].join(","),
+    [
+      "2026-05",
+      "Storage",
+      "Queue Storage",
+      "Storage",
+      "Queues",
+      "Queue Operations",
+      "Standard LRS",
+      "eastus",
+      "10",
+      "10K",
+      "0.004",
+      "0.04",
+      "USD",
+      "account=queueacct;scenario=excluded-queues"
+    ].join(","),
+    [
+      "2026-05",
+      "Storage",
+      "Table Storage",
+      "Storage",
+      "Tables",
+      "Table Operations",
+      "Standard LRS",
+      "eastus",
+      "8",
+      "10K",
+      "0.004",
+      "0.03",
+      "USD",
+      "account=tableacct;scenario=excluded-tables"
+    ].join(",")
+  ];
+  return rows.join("\n");
+}
