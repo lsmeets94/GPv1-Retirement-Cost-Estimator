@@ -700,7 +700,8 @@ export default function App() {
 
   useEffect(() => {
     let active = true;
-    lookupRegionAvailability(manual.region, manual.currency)
+    const [region, currency] = availabilityLookupKey.split(":");
+    lookupRegionAvailability(region, currency)
       .then((availability) => {
         if (!active) return;
         const hasAvailability = allRedundancies.some((redundancy) => availability[redundancy].length > 0);
@@ -730,7 +731,7 @@ export default function App() {
     return () => {
       active = false;
     };
-  }, [availabilityLookupKey, manual.currency, manual.region]);
+  }, [availabilityLookupKey]);
 
   useEffect(() => {
     const firstRedundancy = availableRedundancies[0];
