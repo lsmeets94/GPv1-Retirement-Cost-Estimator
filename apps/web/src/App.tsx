@@ -123,6 +123,7 @@ interface SavedPortfolio {
   assessments: PortfolioAssessmentInput[];
 }
 
+const portfolioStorageKey = "gpv1-gpv2-portfolio";
 const allRedundancies: Redundancy[] = ["LRS", "ZRS", "GRS", "RA-GRS", "GZRS", "RA-GZRS"];
 const accessTierSortOrder: AccessTier[] = ["Hot", "Cool", "Cold", "Archive"];
 const conversionAccessTiers: AccessTier[] = ["Hot", "Cool"];
@@ -534,7 +535,7 @@ function loadSavedPortfolioState(): {
     };
   }
 
-  const saved = window.localStorage.getItem("gpv1-gpv2-portfolio");
+  const saved = window.localStorage.getItem(portfolioStorageKey);
   if (!saved) {
     return {
       customerProfile: defaultCustomerProfile,
@@ -754,7 +755,7 @@ export default function App() {
       customerProfile,
       assessments: portfolioAssessments
     };
-    window.localStorage.setItem("gpv1-gpv2-portfolio", JSON.stringify(saved));
+    window.localStorage.setItem(portfolioStorageKey, JSON.stringify(saved));
   }, [customerProfile, portfolioAssessments]);
 
   function updateManual<K extends keyof ManualUsageInput>(key: K, value: ManualUsageInput[K]) {
@@ -920,11 +921,18 @@ export default function App() {
     downloadFile("gpv1-gpv2-portfolio.csv", portfolioToCsv(portfolioSummary.activeAssessments), "text/csv;charset=utf-8");
   }
 
+  function recalculateResults(nextResults: ResultLineItem[], nextDiscounts: DiscountSettings) {
+    return nextResults.map((row) => ({
+      ...calculateResultLine(row.usage, row.gpV1, row.gpV2, nextDiscounts),
+      includeInTotals: row.includeInTotals
+    }));
+  }
+
   function loadEstimate(saved: SavedEstimate) {
     setManual(saved.manual);
     setDiscounts(saved.discounts);
     setUsageRows(saved.usageRows || []);
-    setResults(saved.results || []);
+    setResults(recalculateResults(saved.results || [], saved.discounts));
     setPricingRefreshedAt(saved.pricingRefreshedAt || "Not refreshed yet");
     setExperienceMode(saved.experienceMode || "advanced");
     setSelectedTemplateName("custom");
