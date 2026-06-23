@@ -45,6 +45,8 @@ jobs:
           # use the already-built output instead of running a second build.
           app_location: apps/web
           api_location: apps/api
+          api_language: node
+          api_version: '20'
           output_location: dist
           skip_app_build: true
           skip_api_build: true
