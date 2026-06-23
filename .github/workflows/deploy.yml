@@ -43,9 +43,8 @@ jobs:
           action: upload
           # The monorepo is pre-built above; skip_app_build tells the action to
           # use the already-built output instead of running a second build.
-          app_location: apps/web
+          app_location: apps/web/dist
           api_location: apps/api
-          output_location: dist
           skip_app_build: true
           # Let the action run the API build so Oryx provides the Functions
           # language metadata required by Azure Static Web Apps.
