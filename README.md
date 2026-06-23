@@ -1,5 +1,8 @@
 # GPv1 to GPv2 Billing Impact Estimator
 
+[![CI](https://github.com/microsoft/GPv1-Retirement-Cost-Estimator/actions/workflows/ci.yml/badge.svg)](https://github.com/microsoft/GPv1-Retirement-Cost-Estimator/actions/workflows/ci.yml)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fmicrosoft%2FGPv1-Retirement-Cost-Estimator%2Fmain%2Finfra%2Fazuredeploy.json)
+
 Azure-hostable web app for estimating the billing impact of upgrading Azure Storage GPv1 accounts to GPv2 using public Azure list pricing.
 
 ## What It Does
@@ -51,6 +54,22 @@ The API uses the unauthenticated Azure Retail Prices API:
 `https://prices.azure.com/api/retail/prices?api-version=2023-01-01-preview`
 
 Prices are filtered by Storage service family, Consumption price type, region, currency, and available meter hints. The response keeps meter IDs and public meter details visible in the UI.
+
+## CI/CD
+
+The repository includes two GitHub Actions workflows:
+
+- **CI** (`.github/workflows/ci.yml`) — runs on every push and pull request to `main`. Runs tests, typecheck, lint, build, and a production dependency audit. No secrets required.
+- **Deploy** (`.github/workflows/deploy.yml`) — runs on every push to `main` and can be triggered manually. Deploys to Azure Static Web Apps.
+
+To enable the deploy workflow after forking:
+
+1. Click the **Deploy to Azure** badge above (or use the ARM template at `infra/azuredeploy.json`) to provision an Azure Static Web App in your subscription.
+2. In the Azure portal, open the Static Web App resource and copy its **deployment token** (Manage deployment token).
+3. In your GitHub repository, go to **Settings → Secrets and variables → Actions** and add a secret named `AZURE_STATIC_WEB_APPS_API_TOKEN` with that token.
+4. Push to `main` or trigger the Deploy workflow manually.
+
+See [docs/deployment.md](./docs/deployment.md) for full deployment options.
 
 ## Important Limits
 
