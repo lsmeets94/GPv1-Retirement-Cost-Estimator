@@ -215,6 +215,10 @@ function sortConversionTiers(tiers: AccessTier[]): AccessTier[] {
   return accessTierSortOrder.filter((tier) => conversionAccessTiers.includes(tier) && tiers.includes(tier));
 }
 
+function getAvailabilityLookupKey(region: string, currency: string): string {
+  return `${region}:${currency}`;
+}
+
 function chartLabel(value: string): string {
   return value.length > 34 ? `${value.slice(0, 31)}...` : value;
 }
@@ -576,7 +580,7 @@ export default function App() {
   const [status, setStatus] = useState<string>(initialSavedPortfolio.status);
   const [pricingBusy, setPricingBusy] = useState<boolean>(false);
   const [regionAvailability, setRegionAvailability] = useState<RegionAvailability>(fullAvailability);
-  const [availabilityMessage, setAvailabilityMessage] = useState<{ key: string; message: string }>({ key: "", message: "" });
+  const [availabilityStatusCache, setAvailabilityStatusCache] = useState<{ key: string; message: string }>({ key: "", message: "" });
   const [scenarioRows, setScenarioRows] = useState<ScenarioSummary[]>([]);
   const [scenarioStatus, setScenarioStatus] = useState<string>("Not compared yet");
   const [customerProfile, setCustomerProfile] = useState<CustomerProfile>(initialSavedPortfolio.customerProfile);
@@ -688,10 +692,10 @@ export default function App() {
     [regionAvailability]
   );
   const availableAccessTiers = regionAvailability[manual.redundancy]?.length ? sortConversionTiers(regionAvailability[manual.redundancy]) : conversionAccessTiers;
-  const availabilityLookupKey = `${manual.region}:${manual.currency}`;
+  const availabilityLookupKey = getAvailabilityLookupKey(manual.region, manual.currency);
   const availabilityStatus =
-    availabilityMessage.key === availabilityLookupKey
-      ? availabilityMessage.message
+    availabilityStatusCache.key === availabilityLookupKey
+      ? availabilityStatusCache.message
       : `Checking ${manual.region} StorageV2 availability...`;
 
   useEffect(() => {
@@ -702,14 +706,14 @@ export default function App() {
         const hasAvailability = allRedundancies.some((redundancy) => availability[redundancy].length > 0);
         if (!hasAvailability) {
           setRegionAvailability(fullAvailability);
-          setAvailabilityMessage({
+          setAvailabilityStatusCache({
             key: availabilityLookupKey,
             message: "Regional availability could not be determined; showing all options."
           });
           return;
         }
         setRegionAvailability(availability);
-        setAvailabilityMessage({
+        setAvailabilityStatusCache({
           key: availabilityLookupKey,
           message: "Regional options reflect public StorageV2 Blob meters."
         });
@@ -717,7 +721,7 @@ export default function App() {
       .catch(() => {
         if (!active) return;
         setRegionAvailability(fullAvailability);
-        setAvailabilityMessage({
+        setAvailabilityStatusCache({
           key: availabilityLookupKey,
           message: "Regional availability could not be determined; showing all options."
         });
