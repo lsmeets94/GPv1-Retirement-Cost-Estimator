@@ -7,6 +7,21 @@
 
 Azure-hostable web app for estimating the billing impact of upgrading Azure Storage GPv1 accounts to GPv2 using public Azure list pricing.
 
+> 📖 **Ready to deploy?** See [docs/deployment.md](./docs/deployment.md) for all deployment options including one-click Azure deployment, manual ARM template deployment, and GitHub Actions setup.
+
+## Deployment
+
+Click the **Deploy to Azure** badge above (or use the ARM template at `infra/azuredeploy.json`) to provision an Azure Static Web App in your subscription.
+
+To enable the automated deploy workflow after forking:
+
+1. Click the **Deploy to Azure** badge above to provision an Azure Static Web App in your subscription.
+2. In the Azure portal, open the Static Web App resource and copy its **deployment token** (Manage deployment token).
+3. In your GitHub repository, go to **Settings → Secrets and variables → Actions** and add a secret named `AZURE_STATIC_WEB_APPS_API_TOKEN` with that token.
+4. Push to `main` or trigger the Deploy workflow manually.
+
+See [docs/deployment.md](./docs/deployment.md) for full deployment options.
+
 ## What It Does
 
 - Accepts manual GPv1 Blob Storage usage or structured CSV billing line items.
@@ -63,15 +78,6 @@ The repository includes two GitHub Actions workflows:
 
 - **CI** (`.github/workflows/ci.yml`) — runs on every push and pull request to `main`. Runs tests, typecheck, lint, build, and a production dependency audit. No secrets required.
 - **Deploy** (`.github/workflows/deploy.yml`) — runs on every push to `main` and can be triggered manually. Deploys to Azure Static Web Apps.
-
-To enable the deploy workflow after forking:
-
-1. Click the **Deploy to Azure** badge above (or use the ARM template at `infra/azuredeploy.json`) to provision an Azure Static Web App in your subscription.
-2. In the Azure portal, open the Static Web App resource and copy its **deployment token** (Manage deployment token).
-3. In your GitHub repository, go to **Settings → Secrets and variables → Actions** and add a secret named `AZURE_STATIC_WEB_APPS_API_TOKEN` with that token.
-4. Push to `main` or trigger the Deploy workflow manually.
-
-See [docs/deployment.md](./docs/deployment.md) for full deployment options.
 
 ## Important Limits
 
