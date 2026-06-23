@@ -517,7 +517,50 @@ function isSavedPortfolio(value: unknown): value is SavedPortfolio {
   );
 }
 
+function loadSavedPortfolioState(): {
+  customerProfile: CustomerProfile;
+  assessments: PortfolioAssessmentInput[];
+  status: string;
+} {
+  if (typeof window === "undefined") {
+    return {
+      customerProfile: defaultCustomerProfile,
+      assessments: [],
+      status: "Ready"
+    };
+  }
+
+  const saved = window.localStorage.getItem("gpv1-gpv2-portfolio");
+  if (!saved) {
+    return {
+      customerProfile: defaultCustomerProfile,
+      assessments: [],
+      status: "Ready"
+    };
+  }
+
+  try {
+    const parsed = JSON.parse(saved) as unknown;
+    if (!isSavedPortfolio(parsed)) {
+      throw new Error("Invalid saved portfolio");
+    }
+
+    return {
+      customerProfile: { ...defaultCustomerProfile, ...parsed.customerProfile },
+      assessments: parsed.assessments || [],
+      status: "Ready"
+    };
+  } catch {
+    return {
+      customerProfile: defaultCustomerProfile,
+      assessments: [],
+      status: "Portfolio repository could not be loaded from local storage."
+    };
+  }
+}
+
 export default function App() {
+  const initialSavedPortfolio = useMemo(() => loadSavedPortfolioState(), []);
   const [step, setStep] = useState<Step>("input");
   const [mode, setMode] = useState<"manual" | "csv">("manual");
   const [experienceMode, setExperienceMode] = useState<ExperienceMode>("simple");
@@ -530,14 +573,14 @@ export default function App() {
   const [discounts, setDiscounts] = useState<DiscountSettings>(defaultDiscounts);
   const [results, setResults] = useState<ResultLineItem[]>([]);
   const [pricingRefreshedAt, setPricingRefreshedAt] = useState<string>("Not refreshed yet");
-  const [status, setStatus] = useState<string>("Ready");
+  const [status, setStatus] = useState<string>(initialSavedPortfolio.status);
   const [pricingBusy, setPricingBusy] = useState<boolean>(false);
   const [regionAvailability, setRegionAvailability] = useState<RegionAvailability>(fullAvailability);
-  const [availabilityStatus, setAvailabilityStatus] = useState<string>("Checking regional availability...");
+  const [availabilityMessage, setAvailabilityMessage] = useState<{ key: string; message: string }>({ key: "", message: "" });
   const [scenarioRows, setScenarioRows] = useState<ScenarioSummary[]>([]);
   const [scenarioStatus, setScenarioStatus] = useState<string>("Not compared yet");
-  const [customerProfile, setCustomerProfile] = useState<CustomerProfile>(defaultCustomerProfile);
-  const [portfolioAssessments, setPortfolioAssessments] = useState<PortfolioAssessmentInput[]>([]);
+  const [customerProfile, setCustomerProfile] = useState<CustomerProfile>(initialSavedPortfolio.customerProfile);
+  const [portfolioAssessments, setPortfolioAssessments] = useState<PortfolioAssessmentInput[]>(initialSavedPortfolio.assessments);
   const [selectedPortfolioIds, setSelectedPortfolioIds] = useState<string[]>([]);
   const [portfolioEstimateName, setPortfolioEstimateName] = useState("");
 
@@ -645,32 +688,45 @@ export default function App() {
     [regionAvailability]
   );
   const availableAccessTiers = regionAvailability[manual.redundancy]?.length ? sortConversionTiers(regionAvailability[manual.redundancy]) : conversionAccessTiers;
+  const availabilityLookupKey = `${manual.region}:${manual.currency}`;
+  const availabilityStatus =
+    availabilityMessage.key === availabilityLookupKey
+      ? availabilityMessage.message
+      : `Checking ${manual.region} StorageV2 availability...`;
 
   useEffect(() => {
     let active = true;
-    setAvailabilityStatus(`Checking ${manual.region} StorageV2 availability...`);
     lookupRegionAvailability(manual.region, manual.currency)
       .then((availability) => {
         if (!active) return;
         const hasAvailability = allRedundancies.some((redundancy) => availability[redundancy].length > 0);
         if (!hasAvailability) {
           setRegionAvailability(fullAvailability);
-          setAvailabilityStatus("Regional availability could not be determined; showing all options.");
+          setAvailabilityMessage({
+            key: availabilityLookupKey,
+            message: "Regional availability could not be determined; showing all options."
+          });
           return;
         }
         setRegionAvailability(availability);
-        setAvailabilityStatus("Regional options reflect public StorageV2 Blob meters.");
+        setAvailabilityMessage({
+          key: availabilityLookupKey,
+          message: "Regional options reflect public StorageV2 Blob meters."
+        });
       })
       .catch(() => {
         if (!active) return;
         setRegionAvailability(fullAvailability);
-        setAvailabilityStatus("Regional availability could not be determined; showing all options.");
+        setAvailabilityMessage({
+          key: availabilityLookupKey,
+          message: "Regional availability could not be determined; showing all options."
+        });
       });
 
     return () => {
       active = false;
     };
-  }, [manual.currency, manual.region]);
+  }, [availabilityLookupKey, manual.currency, manual.region]);
 
   useEffect(() => {
     const firstRedundancy = availableRedundancies[0];
@@ -687,27 +743,6 @@ export default function App() {
   }, [availableRedundancies, manual.accessTier, manual.redundancy, regionAvailability]);
 
   useEffect(() => {
-    setResults((current) =>
-      current.map((row) => ({
-        ...calculateResultLine(row.usage, row.gpV1, row.gpV2, discounts),
-        includeInTotals: row.includeInTotals
-      }))
-    );
-  }, [discounts]);
-
-  useEffect(() => {
-    const saved = window.localStorage.getItem("gpv1-gpv2-portfolio");
-    if (!saved) return;
-    try {
-      const parsed = JSON.parse(saved) as SavedPortfolio;
-      setCustomerProfile({ ...defaultCustomerProfile, ...parsed.customerProfile });
-      setPortfolioAssessments(parsed.assessments || []);
-    } catch {
-      setStatus("Portfolio repository could not be loaded from local storage.");
-    }
-  }, []);
-
-  useEffect(() => {
     const saved: SavedPortfolio = {
       version: "1.3",
       savedAt: new Date().toISOString(),
@@ -717,18 +752,21 @@ export default function App() {
     window.localStorage.setItem("gpv1-gpv2-portfolio", JSON.stringify(saved));
   }, [customerProfile, portfolioAssessments]);
 
-  useEffect(() => {
-    if (results.length > 0 && portfolioEstimateName.trim().length === 0) {
-      setPortfolioEstimateName(suggestedPortfolioEstimateName);
-    }
-  }, [portfolioEstimateName, results.length, suggestedPortfolioEstimateName]);
-
   function updateManual<K extends keyof ManualUsageInput>(key: K, value: ManualUsageInput[K]) {
     setManual((current) => ({ ...current, [key]: value }));
   }
 
   function updateDiscount<K extends keyof DiscountSettings>(key: K, value: DiscountSettings[K]) {
-    setDiscounts((current) => ({ ...current, [key]: value }));
+    setDiscounts((current) => {
+      const next = { ...current, [key]: value };
+      setResults((currentResults) =>
+        currentResults.map((row) => ({
+          ...calculateResultLine(row.usage, row.gpV1, row.gpV2, next),
+          includeInTotals: row.includeInTotals
+        }))
+      );
+      return next;
+    });
   }
 
   function updateCustomerProfile<K extends keyof CustomerProfile>(key: K, value: CustomerProfile[K]) {
