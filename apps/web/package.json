@@ -12,7 +12,7 @@
   "dependencies": {
     "@fluentui/react-components": "^9.64.0",
     "@gpv2-estimator/core": "0.1.0",
-    "@vitejs/plugin-react": "^6.0.2",
+    "@vitejs/plugin-react": "^6.0.3",
     "jspdf": "^4.2.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
