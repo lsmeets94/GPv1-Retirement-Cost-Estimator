@@ -28,6 +28,11 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Create local.settings.json for API
+        run: |
+          echo '{"IsEncrypted":false,"Values":{"AzureWebJobsStorage":"","FUNCTIONS_WORKER_RUNTIME":"node"}}' \
+            > apps/api/local.settings.json
+
       # Requires the AZURE_STATIC_WEB_APPS_API_TOKEN secret.
       # To obtain it:
       #   1. Deploy the ARM template in infra/azuredeploy.json (or create the
