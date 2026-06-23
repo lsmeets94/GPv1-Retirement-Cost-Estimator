@@ -3,6 +3,8 @@
 [![CI](https://github.com/microsoft/GPv1-Retirement-Cost-Estimator/actions/workflows/ci.yml/badge.svg)](https://github.com/microsoft/GPv1-Retirement-Cost-Estimator/actions/workflows/ci.yml)
 [![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fmicrosoft%2FGPv1-Retirement-Cost-Estimator%2Fmain%2Finfra%2Fazuredeploy.json)
 
+> **If the Deploy to Azure button shows a download error**, the repository may not yet be publicly accessible. Download [`infra/azuredeploy.json`](./infra/azuredeploy.json) manually, then open the [Azure Portal custom deployment editor](https://portal.azure.com/#create/Microsoft.Template), choose **Build your own template in the editor**, and paste the file contents there.
+
 Azure-hostable web app for estimating the billing impact of upgrading Azure Storage GPv1 accounts to GPv2 using public Azure list pricing.
 
 ## What It Does
