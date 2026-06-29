@@ -13,7 +13,7 @@
   },
   "devDependencies": {
     "@gpv2-estimator/core": "file:../../packages/core",
-    "azure-functions-core-tools": "^4.0.7030",
+    "azure-functions-core-tools": "^4.12.1",
     "esbuild": "^0.28.1"
   }
 }
