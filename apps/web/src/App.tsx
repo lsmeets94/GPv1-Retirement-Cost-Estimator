@@ -15,6 +15,8 @@ import {
   azureArmRegions,
   MAX_CSV_CHARACTERS,
   manualInputToUsage,
+  extractStorageAccountName,
+  groupByAccountAndRegion,
   inferAccessTier,
   inferRedundancy,
   matchMeter,
@@ -23,6 +25,7 @@ import {
   summarizePortfolio,
   summarizeCosts,
   type AccessTier,
+  type AccountRegionGroup,
   type CustomerProfile,
   type DiscountSettings,
   type ManualUsageInput,
@@ -275,11 +278,105 @@ function assessmentCapacityGb(rows: ResultLineItem[], manualFallback: number): n
 }
 
 function inferStorageAccountName(rows: UsageLineItem[], fallback: string): string {
-  return rows.find((row) => row.storageAccountName)?.storageAccountName || fallback;
+  const modeledFirst = [...rows.filter((row) => row.modeled), ...rows.filter((row) => !row.modeled)];
+  for (const row of modeledFirst) {
+    const name = extractStorageAccountName(row.storageAccountName);
+    if (name) return name;
+  }
+  return fallback;
 }
 
 function uid(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+}
+
+function pickMostCommon<T extends string>(values: Array<T | undefined | null>): T | undefined {
+  const counts = new Map<T, number>();
+  for (const value of values) {
+    if (!value) continue;
+    counts.set(value, (counts.get(value) ?? 0) + 1);
+  }
+  let best: T | undefined;
+  let bestCount = 0;
+  for (const [value, count] of counts) {
+    if (count > bestCount) {
+      best = value;
+      bestCount = count;
+    }
+  }
+  return best;
+}
+
+function assessmentGroupLabel(
+  group: AccountRegionGroup<ResultLineItem>,
+  usageRows: UsageLineItem[],
+  groups: AccountRegionGroup<ResultLineItem>[]
+): string {
+  const base = group.account || "Unassigned account";
+  const sameAccountAcrossRegions =
+    groups.filter((entry) => (entry.account ?? "") === (group.account ?? "")).length > 1;
+  const billingPeriod = pickMostCommon(usageRows.map((row) => (row.billingPeriod?.trim() ? row.billingPeriod.trim() : undefined)));
+  const qualifier = sameAccountAcrossRegions ? group.region || "unknown region" : billingPeriod;
+  return qualifier ? `${base} (${qualifier})` : base;
+}
+
+interface BuildAssessmentsOptions {
+  customName?: string;
+  fallbackName: string;
+}
+
+/**
+ * Turn a completed estimate into one portfolio assessment per storage account and
+ * region. A single-account, single-region upload stays one assessment (named with
+ * the user's estimate name); multi-account or multi-region uploads are split so
+ * each account keeps its own region, currency, redundancy, tier, capacity, and
+ * region-specific pricing rather than being collapsed into one account.
+ */
+function buildAssessmentsFromEstimate(saved: SavedEstimate, options: BuildAssessmentsOptions): PortfolioAssessmentInput[] {
+  const now = new Date().toISOString();
+  const groups = groupByAccountAndRegion(
+    saved.results,
+    (row) => row.usage.storageAccountName,
+    (row) => row.usage.region
+  );
+  const customName = options.customName?.trim();
+  const singleGroup = groups.length <= 1;
+
+  return groups.map((group) => {
+    const usageRows = group.items.map((row) => row.usage);
+    const region = group.region || pickMostCommon(usageRows.map((row) => row.region)) || saved.manual.region;
+    const currency = pickMostCommon(usageRows.map((row) => row.currency)) || saved.manual.currency;
+    const redundancy = pickMostCommon(usageRows.map((row) => row.redundancy)) || saved.manual.redundancy;
+    const accessTier = pickMostCommon(usageRows.map((row) => row.accessTier)) || saved.manual.accessTier;
+    const label = assessmentGroupLabel(group, usageRows, groups);
+    const name = singleGroup
+      ? customName || options.fallbackName
+      : customName
+        ? `${customName} — ${label}`
+        : label;
+    const storageAccountName =
+      group.account || (singleGroup ? inferStorageAccountName(saved.usageRows, "manual-assessment") : "Unassigned account");
+
+    return {
+      id: uid("assessment"),
+      name,
+      storageAccountName,
+      region,
+      redundancy,
+      accessTier,
+      currency,
+      capacityGb: assessmentCapacityGb(group.items, singleGroup ? saved.manual.capacityGb : 0),
+      results: group.items,
+      notes: usageRows.flatMap((row) => row.notes).slice(0, 5),
+      createdAt: saved.savedAt || now,
+      updatedAt: now,
+      status: "Active"
+    } satisfies PortfolioAssessmentInput;
+  });
+}
+
+function portfolioAccountRegionKey(assessment: { storageAccountName: string; region: string }): string {
+  return `${(assessment.storageAccountName || "").trim().toLowerCase()}|${(assessment.region || "").trim().toLowerCase()}`;
 }
 
 function portfolioToCsv(rows: PortfolioAssessmentSummary[]): string {
@@ -433,7 +530,50 @@ function pricingLookupKey(row: UsageLineItem): string {
   });
 }
 
+function pricingFetch(
+  params: URLSearchParams,
+  key: string,
+  meterNameForError: string,
+  runCache: Map<string, Promise<PricingSearchResponse>>
+): Promise<PricingSearchResponse> {
+  const cached = runCache.get(key);
+  if (cached) {
+    return cached;
+  }
+
+  const request = fetch(`/api/prices/search?${params.toString()}`).then(async (response) => {
+    if (!response.ok && response.status !== 206) {
+      throw new Error(`Pricing lookup failed for ${meterNameForError}`);
+    }
+    return (await response.json()) as PricingSearchResponse;
+  });
+  runCache.set(key, request);
+  return request;
+}
+
+const meterIdPattern = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
 async function lookupPrices(row: UsageLineItem, target: "gpv1" | "gpv2", refresh = false, runCache = pricingLookupCache): Promise<PricingSearchResponse> {
+  // GPv1/current price: when the export carries the billed meter id, pin the
+  // public price to that exact meter (scoped to the row's region) instead of the
+  // fuzzy meterName text search. This catches meters like the GPv1 capacity meter
+  // whose export meterName ("General Purpose Data Stored") does not appear in the
+  // Retail Prices API. GPv2 stays inference-based (its target meter isn't billed).
+  if (target === "gpv1" && row.meterId && meterIdPattern.test(row.meterId)) {
+    const idParams = new URLSearchParams({
+      region: row.region,
+      currency: row.currency,
+      meterId: row.meterId,
+      refresh: String(refresh)
+    });
+    const idKey = `${JSON.stringify({ region: row.region, currency: row.currency, meterId: row.meterId })}:${refresh ? "refresh" : "cached"}`;
+    const byId = await pricingFetch(idParams, idKey, row.meterName, runCache);
+    if (byId.candidates.length > 0) {
+      return byId;
+    }
+    // Meter id isn't in the public retail prices: fall back to the text lookup.
+  }
+
   const params = new URLSearchParams({
     region: row.region,
     currency: row.currency,
@@ -446,19 +586,7 @@ async function lookupPrices(row: UsageLineItem, target: "gpv1" | "gpv2", refresh
   params.set("accessTier", target === "gpv1" ? "Hot" : row.accessTier || "Hot");
 
   const key = `${pricingLookupKey(row)}:${refresh ? "refresh" : "cached"}`;
-  const cached = runCache.get(key);
-  if (cached) {
-    return cached;
-  }
-
-  const request = fetch(`/api/prices/search?${params.toString()}`).then(async (response) => {
-    if (!response.ok && response.status !== 206) {
-      throw new Error(`Pricing lookup failed for ${row.meterName}`);
-    }
-    return (await response.json()) as PricingSearchResponse;
-  });
-  runCache.set(key, request);
-  return request;
+  return pricingFetch(params, key, row.meterName, runCache);
 }
 
 function downloadFile(filename: string, content: string, type: string): void {
@@ -592,6 +720,7 @@ export default function App() {
   const summary = useMemo(() => summarizeCosts(results), [results]);
   const portfolioSummary = useMemo(() => summarizePortfolio(portfolioAssessments), [portfolioAssessments]);
   const currency = usageRows[0]?.currency || manual.currency || "USD";
+  const ignoredUsageRows = useMemo(() => usageRows.filter((row) => !row.modeled).length, [usageRows]);
   const migrationAssessment = useMemo(
     () => buildMigrationAssessment(results, usageRows, manual, summary.discountedDelta, experienceMode),
     [experienceMode, manual, results, summary.discountedDelta, usageRows]
@@ -650,21 +779,56 @@ export default function App() {
     () => portfolioSummary.assessments.filter((assessment) => selectedPortfolioIds.includes(assessment.id)),
     [portfolioSummary.assessments, selectedPortfolioIds]
   );
-  const currentEstimatePortfolioMatch = useMemo(
-    () =>
-      results.length > 0
-        ? portfolioSummary.assessments.find(
-            (assessment) =>
-              assessment.results.length === results.length &&
-              assessment.results.every((row, index) => row.usage.id === results[index]?.usage.id && row.gpV1DiscountedCost === results[index]?.gpV1DiscountedCost && row.gpV2DiscountedCost === results[index]?.gpV2DiscountedCost)
-          )
-        : undefined,
-    [portfolioSummary.assessments, results]
+  const currentEstimatePortfolioMatch = useMemo(() => {
+    if (results.length === 0) return false;
+    const priced = new Map<string, { gpV1DiscountedCost: number; gpV2DiscountedCost: number }>();
+    for (const assessment of portfolioSummary.assessments) {
+      for (const row of assessment.results) {
+        priced.set(row.usage.id, { gpV1DiscountedCost: row.gpV1DiscountedCost, gpV2DiscountedCost: row.gpV2DiscountedCost });
+      }
+    }
+    // The current estimate may have been split across several assessments (one per
+    // account/region), so treat it as "in the portfolio" when every priced row is
+    // already represented rather than requiring a single matching assessment.
+    return results.every((row) => {
+      const match = priced.get(row.usage.id);
+      return Boolean(match) && match?.gpV1DiscountedCost === row.gpV1DiscountedCost && match?.gpV2DiscountedCost === row.gpV2DiscountedCost;
+    });
+  }, [portfolioSummary.assessments, results]);
+  const currentEstimateAccountGroups = useMemo(
+    () => groupByAccountAndRegion(results, (row) => row.usage.storageAccountName, (row) => row.usage.region),
+    [results]
   );
-  const suggestedPortfolioEstimateName = useMemo(
-    () => inferStorageAccountName(usageRows, `${manual.region}-${manual.redundancy}-${manual.accessTier}-estimate`),
-    [manual.accessTier, manual.redundancy, manual.region, usageRows]
+  const currentEstimateAccountCount = useMemo(
+    () => new Set(currentEstimateAccountGroups.map((group) => group.account ?? "")).size,
+    [currentEstimateAccountGroups]
   );
+  const currentEstimateRegionCount = useMemo(
+    () => new Set(currentEstimateAccountGroups.map((group) => group.region)).size,
+    [currentEstimateAccountGroups]
+  );
+  const accountSplitNote =
+    currentEstimateAccountGroups.length > 1 ? (
+      <div className="availability-note">
+        {`Detected ${currentEstimateAccountCount} storage account${currentEstimateAccountCount === 1 ? "" : "s"}`}
+        {currentEstimateRegionCount > 1 ? ` across ${currentEstimateRegionCount} regions` : ""}
+        {". Each account and region is added to the portfolio as its own assessment so every one keeps its own region's pricing."}
+      </div>
+    ) : null;
+  const suggestedPortfolioEstimateName = useMemo(() => {
+    const isCsvUsage = usageRows.some((row) => row.source === "csv");
+    if (!isCsvUsage) {
+      return inferStorageAccountName(usageRows, `${manual.region}-${manual.redundancy}-${manual.accessTier}-estimate`);
+    }
+    const account = inferStorageAccountName(usageRows, "");
+    const billingPeriod = usageRows.find((row) => row.billingPeriod?.trim())?.billingPeriod?.trim();
+    if (account) {
+      return billingPeriod ? `${account} (${billingPeriod})` : account;
+    }
+    const region = usageRows.find((row) => row.region?.trim())?.region?.trim();
+    const descriptor = [region, billingPeriod].filter(Boolean).join(", ");
+    return descriptor ? `Azure cost export (${descriptor})` : "Azure cost export estimate";
+  }, [usageRows, manual.accessTier, manual.redundancy, manual.region]);
   const hasCustomerWorkspaceData = useMemo(
     () => portfolioAssessments.length > 0 || Object.entries(customerProfile).some(([key, value]) => key !== "engagementStatus" ? value.trim().length > 0 : value !== "Planning"),
     [customerProfile, portfolioAssessments.length]
@@ -868,36 +1032,63 @@ export default function App() {
     };
   }
 
-  function assessmentFromEstimate(saved: SavedEstimate, name?: string): PortfolioAssessmentInput {
-    const now = new Date().toISOString();
-    return {
-      id: uid("assessment"),
-      name: name || inferStorageAccountName(saved.usageRows, "Current estimate"),
-      storageAccountName: inferStorageAccountName(saved.usageRows, "manual-assessment"),
-      region: saved.manual.region,
-      redundancy: saved.manual.redundancy,
-      accessTier: saved.manual.accessTier,
-      currency: saved.manual.currency,
-      capacityGb: assessmentCapacityGb(saved.results, saved.manual.capacityGb),
-      results: saved.results,
-      notes: saved.usageRows.flatMap((row) => row.notes).slice(0, 5),
-      createdAt: saved.savedAt || now,
-      updatedAt: now,
-      status: "Active"
-    };
-  }
-
   function addCurrentEstimateToPortfolio() {
     if (results.length === 0) {
       setStatus("Calculate an estimate before adding it to the portfolio.");
       return;
     }
-    const estimateName = portfolioEstimateName.trim() || suggestedPortfolioEstimateName;
-    const assessment = assessmentFromEstimate(currentSavedEstimate(), estimateName);
-    setPortfolioAssessments((current) => [assessment, ...current]);
-    setSelectedPortfolioIds([assessment.id]);
+    const remaining = MAX_PORTFOLIO_ASSESSMENTS - portfolioAssessments.length;
+    if (remaining <= 0) {
+      setStatus(`Portfolio already has the maximum of ${MAX_PORTFOLIO_ASSESSMENTS} assessments. Remove some before adding more.`);
+      return;
+    }
+    const assessments = buildAssessmentsFromEstimate(currentSavedEstimate(), {
+      customName: portfolioEstimateName,
+      fallbackName: portfolioEstimateName.trim() || suggestedPortfolioEstimateName
+    });
+    const toAdd = assessments.slice(0, remaining);
+    const skipped = assessments.length - toAdd.length;
+    setPortfolioAssessments((current) => [...toAdd, ...current]);
+    setSelectedPortfolioIds(toAdd.map((assessment) => assessment.id));
     setPortfolioEstimateName("");
-    setStatus(`Added ${assessment.name} to portfolio.`);
+    if (toAdd.length > 1) {
+      const regionCount = new Set(toAdd.map((assessment) => assessment.region)).size;
+      const regionNote = regionCount > 1 ? ` across ${regionCount} regions` : "";
+      const skippedNote = skipped > 0 ? ` (${skipped} skipped — portfolio limit reached)` : "";
+      setStatus(`Added ${toAdd.length} storage accounts${regionNote} to portfolio${skippedNote}.`);
+    } else {
+      setStatus(`Added ${toAdd[0].name} to portfolio.`);
+    }
+    setStep("portfolio");
+  }
+
+  // A raw cost export can contain many storage accounts. When more than one is
+  // detected we build the per-account/region assessments and jump straight to a
+  // populated portfolio (deduping by account+region so re-uploads update in place)
+  // instead of leaving the user on the single-estimate Pricing Review page.
+  function maybeAutoBuildPortfolio(rows: UsageLineItem[], priced: ResultLineItem[]) {
+    if (priced.length === 0) return;
+    const groups = groupByAccountAndRegion(priced, (row) => row.usage.storageAccountName, (row) => row.usage.region);
+    const accountCount = new Set(groups.map((group) => group.account ?? "")).size;
+    if (accountCount <= 1) return;
+
+    const saved: SavedEstimate = { ...currentSavedEstimate(), usageRows: rows, results: priced };
+    const assessments = buildAssessmentsFromEstimate(saved, {
+      customName: "",
+      fallbackName: inferStorageAccountName(rows, "Azure cost export estimate")
+    });
+    if (assessments.length === 0) return;
+
+    setPortfolioAssessments((current) => {
+      const incomingKeys = new Set(assessments.map(portfolioAccountRegionKey));
+      const kept = current.filter((assessment) => !incomingKeys.has(portfolioAccountRegionKey(assessment)));
+      return [...assessments, ...kept].slice(0, MAX_PORTFOLIO_ASSESSMENTS);
+    });
+    setSelectedPortfolioIds(assessments.map((assessment) => assessment.id));
+
+    const regionCount = new Set(assessments.map((assessment) => assessment.region)).size;
+    const regionNote = regionCount > 1 ? ` across ${regionCount} regions` : "";
+    setStatus(`Imported ${accountCount} storage accounts${regionNote} into your portfolio from the CSV.`);
     setStep("portfolio");
   }
 
@@ -1073,7 +1264,13 @@ export default function App() {
         setStep("usage");
         return;
       }
-      await priceUsageRows(parsed.rows, false, "results");
+      if (!parsed.rows.some((row) => row.modeled)) {
+        setStatus("No Blob Storage usage found. All uploaded line items were ignored as non-GPv1/GPv2 usage.");
+        setStep("usage");
+        return;
+      }
+      const priced = await priceUsageRows(parsed.rows, false, "results");
+      maybeAutoBuildPortfolio(parsed.rows, priced);
     } finally {
       setPricingBusy(false);
     }
@@ -1083,12 +1280,17 @@ export default function App() {
     setUsageRows((rows) => rows.map((row) => (row.id === id ? { ...row, included } : row)));
   }
 
-  async function priceUsageRows(rows: UsageLineItem[], refresh = false, nextStep: Step = "pricing") {
+  async function priceUsageRows(rows: UsageLineItem[], refresh = false, nextStep: Step = "pricing"): Promise<ResultLineItem[]> {
     setStatus(refresh ? "Refreshing public Azure prices..." : "Matching public Azure prices...");
     const runCache = new Map<string, Promise<PricingSearchResponse>>();
     let latestRefresh = pricingRefreshedAt;
 
-    const nextResults = await Promise.all(rows.map(async (row) => {
+    // Only Blob Storage usage relevant to a GPv1/GPv2 estimate is priced. Line items from
+    // raw Azure cost exports that are not Blob Storage (VMs, networking, SQL, Files, etc.)
+    // are ignored here so they never surface on the Pricing Review page or in exports.
+    const priceableRows = rows.filter((row) => row.modeled);
+
+    const nextResults = await Promise.all(priceableRows.map(async (row) => {
       if (!row.included || !row.modeled) {
         const unmatched = { confidence: "Unmatched" as const, score: 0, candidates: [], notes: row.notes };
         return calculateResultLine(row, unmatched, unmatched, discounts);
@@ -1117,6 +1319,7 @@ export default function App() {
     setResults(nextResults);
     setStatus("Pricing match complete");
     setStep(nextStep);
+    return nextResults;
   }
 
   async function runPricing(refresh = false, nextStep: Step = "pricing") {
@@ -1363,7 +1566,7 @@ export default function App() {
                     <span key={label}>{index + 1}. {label}</span>
                   ))}
                 </div>
-                <div className="availability-note">CSV upload accepts the app template and common Azure Cost Management export headers such as ProductName, MeterName, ResourceLocation, UnitOfMeasure, EffectivePrice, and CostInBillingCurrency.</div>
+                <div className="availability-note">CSV upload accepts the app template and raw Azure Cost Management usage exports. Column headers are matched case-insensitively (e.g. meterName, meterCategory, resourceLocation, unitOfMeasure, quantity, costInBillingCurrency), and a SKU name column is optional.</div>
                 <input type="file" accept=".csv,text/csv" onChange={(event) => {
                   const file = event.target.files?.[0];
                   if (file) {
@@ -1410,6 +1613,11 @@ export default function App() {
             </Button>
           </div>
           {csvErrors.length > 0 && <div className="error">{csvErrors.join(" ")}</div>}
+          {ignoredUsageRows > 0 && (
+            <div className="availability-note">
+              {ignoredUsageRows} of {usageRows.length} uploaded line {usageRows.length === 1 ? "item" : "items"} {ignoredUsageRows === 1 ? "is" : "are"} not Blob Storage usage. {ignoredUsageRows === 1 ? "It is" : "They are"} ignored for GPv1/GPv2 estimation and excluded from the Pricing Review and the estimate totals.
+            </div>
+          )}
           <UsageTable rows={usageRows} onToggle={toggleRow} />
         </section>
       )}
@@ -1426,7 +1634,18 @@ export default function App() {
               <Button appearance="primary" onClick={() => setStep("results")} disabled={results.length === 0}>View results</Button>
             </div>
           </div>
-          <PricingTable rows={results} onInclude={includeAmbiguous} />
+          {ignoredUsageRows > 0 && (
+            <div className="availability-note">
+              {ignoredUsageRows} non-Blob-Storage line {ignoredUsageRows === 1 ? "item was" : "items were"} ignored from the uploaded file and {ignoredUsageRows === 1 ? "is" : "are"} not shown below. Only GPv1/GPv2 Blob Storage usage is priced.
+            </div>
+          )}
+          {results.length === 0 ? (
+            <div className="chart-empty">
+              No Blob Storage usage was found to price.{ignoredUsageRows > 0 ? ` ${ignoredUsageRows} uploaded line ${ignoredUsageRows === 1 ? "item was" : "items were"} ignored as non-Blob-Storage usage.` : ""}
+            </div>
+          ) : (
+            <PricingTable rows={results} onInclude={includeAmbiguous} />
+          )}
         </section>
       )}
 
@@ -1446,6 +1665,7 @@ export default function App() {
                   <Field label="Estimate name">
                     <Input value={portfolioEstimateName} placeholder={suggestedPortfolioEstimateName} onChange={(_, data) => setPortfolioEstimateName(data.value)} />
                   </Field>
+                  {accountSplitNote}
                 </div>
               )}
             </div>
@@ -1690,6 +1910,7 @@ export default function App() {
                     <Field label="Estimate name">
                       <Input value={portfolioEstimateName} placeholder={suggestedPortfolioEstimateName} onChange={(_, data) => setPortfolioEstimateName(data.value)} />
                     </Field>
+                    {accountSplitNote}
                   </div>
                 )}
               </div>
