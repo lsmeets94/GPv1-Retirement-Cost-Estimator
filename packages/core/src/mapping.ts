@@ -3,11 +3,26 @@ import type { AccessTier, Confidence, MeterMatch, PriceMeter, Redundancy, UsageL
 const blobHints = ["blob", "block blob", "page blob", "data stored", "hot", "cool", "cold", "archive", "replication", "data replicated"];
 const excludedHints = ["file", "disk", "queue", "table", "managed disk", "premium files"];
 const excludedProductHints = ["hierarchical namespace", "data lake", "premium", "file", "queue", "table", "page blob", "backup"];
+// Azure services that are NOT Blob storage but occasionally bill meters whose names
+// collide with the blob hints above. The clearest example is Azure SQL Database,
+// which bills a "General Purpose Data Stored" meter (service Microsoft.Sql /
+// meterCategory "SQL Database") that would otherwise trip the "data stored" hint.
+// These are matched against the row's service identity (service name + meter
+// category), which for Azure exports carries the ARM provider (e.g. Microsoft.Sql).
+const nonStorageServiceHints = ["sql", "database", "cosmos", "postgres", "mysql", "mariadb", "netapp", "redis", "kusto", "synapse"];
 function normalize(value: string | undefined): string {
   return (value || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
 export function isBlobStorageLine(item: Pick<UsageLineItem, "serviceName" | "product" | "meterCategory" | "meterSubcategory" | "meterName" | "skuName">): boolean {
+  // A blob line must belong to Azure Storage. Reject rows that name a non-Storage
+  // service so look-alike meters (e.g. SQL Database "General Purpose Data Stored")
+  // are never counted as blob capacity.
+  const serviceIdentity = normalize(`${item.serviceName} ${item.meterCategory}`);
+  if (nonStorageServiceHints.some((hint) => serviceIdentity.includes(hint))) {
+    return false;
+  }
+
   const haystack = normalize(`${item.serviceName} ${item.product} ${item.meterCategory} ${item.meterSubcategory || ""} ${item.meterName} ${item.skuName}`);
   if (excludedHints.some((hint) => haystack.includes(hint))) {
     return false;

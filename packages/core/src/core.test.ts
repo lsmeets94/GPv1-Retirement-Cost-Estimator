@@ -131,6 +131,20 @@ describe("classification and matching", () => {
   it("detects Blob Storage rows and excludes non-Blob services", () => {
     expect(isBlobStorageLine(usage)).toBe(true);
     expect(isBlobStorageLine({ ...usage, product: "Azure Files", meterSubcategory: "Files", meterName: "LRS Data Stored" })).toBe(false);
+    // Azure SQL Database bills a "General Purpose Data Stored" meter that must not
+    // be counted as blob capacity just because its name contains "Data Stored".
+    expect(
+      isBlobStorageLine({
+        serviceName: "Microsoft.Sql",
+        product: "SQL Database Single/Elastic Pool General Purpose - Storage",
+        meterCategory: "SQL Database",
+        meterSubcategory: "SQL Database Single/Elastic Pool General Purpose - Storage",
+        meterName: "General Purpose Data Stored",
+        skuName: ""
+      })
+    ).toBe(false);
+    // A genuine GPv1 blob capacity row is still detected.
+    expect(isBlobStorageLine({ ...usage, product: "General Block Blob", meterName: "GRS Data Stored" })).toBe(true);
   });
 
   it("classifies ambiguous candidate sets as needing confirmation", () => {
