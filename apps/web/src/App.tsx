@@ -1596,7 +1596,7 @@ export default function App() {
                     <span key={label}>{index + 1}. {label}</span>
                   ))}
                 </div>
-                <div className="availability-note">CSV upload accepts the app template and raw Azure Cost Management usage exports. Column headers are matched case-insensitively (e.g. meterName, meterCategory, resourceLocation, unitOfMeasure, quantity, costInBillingCurrency), and a SKU name column is optional.</div>
+                <div className="availability-note">CSV upload accepts the app template and raw Azure Cost Management usage exports. Column headers are matched case-insensitively (e.g. meterName, meterCategory, resourceLocation, unitOfMeasure, quantity, costInBillingCurrency). When present, a billed meter id pins the current price to the exact meter and the ARM resource id identifies the storage account; a SKU name column is optional.</div>
                 <input type="file" accept=".csv,text/csv" onChange={(event) => {
                   const file = event.target.files?.[0];
                   if (file) {
