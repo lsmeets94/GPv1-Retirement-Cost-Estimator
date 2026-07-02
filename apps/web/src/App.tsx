@@ -554,26 +554,10 @@ function pricingFetch(
 const meterIdPattern = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
 async function lookupPrices(row: UsageLineItem, target: "gpv1" | "gpv2", refresh = false, runCache = pricingLookupCache): Promise<PricingSearchResponse> {
-  // GPv1/current price: when the export carries the billed meter id, pin the
-  // public price to that exact meter (scoped to the row's region) instead of the
-  // fuzzy meterName text search. This catches meters like the GPv1 capacity meter
-  // whose export meterName ("General Purpose Data Stored") does not appear in the
-  // Retail Prices API. GPv2 stays inference-based (its target meter isn't billed).
-  if (target === "gpv1" && row.meterId && meterIdPattern.test(row.meterId)) {
-    const idParams = new URLSearchParams({
-      region: row.region,
-      currency: row.currency,
-      meterId: row.meterId,
-      refresh: String(refresh)
-    });
-    const idKey = `${JSON.stringify({ region: row.region, currency: row.currency, meterId: row.meterId })}:${refresh ? "refresh" : "cached"}`;
-    const byId = await pricingFetch(idParams, idKey, row.meterName, runCache);
-    if (byId.candidates.length > 0) {
-      return byId;
-    }
-    // Meter id isn't in the public retail prices: fall back to the text lookup.
-  }
-
+  // Primary lookup: product/meterName text search. GPv1 and GPv2 share this one
+  // request (same cache key) so a single CSV row costs one API call, not two.
+  // matchMeter already pins the exact GPv1 meter by id from within these candidates,
+  // so operations rows need no extra call.
   const params = new URLSearchParams({
     region: row.region,
     currency: row.currency,
@@ -586,7 +570,53 @@ async function lookupPrices(row: UsageLineItem, target: "gpv1" | "gpv2", refresh
   params.set("accessTier", target === "gpv1" ? "Hot" : row.accessTier || "Hot");
 
   const key = `${pricingLookupKey(row)}:${refresh ? "refresh" : "cached"}`;
-  return pricingFetch(params, key, row.meterName, runCache);
+  const textResult = await pricingFetch(params, key, row.meterName, runCache);
+
+  // GPv1 fallback: pin the current price to the exact billed meter id only when the
+  // text search did not already surface it. For well-named rows (e.g. operations)
+  // the billed meter id is already among the text candidates and matchMeter pins it
+  // directly, so no extra request is made. This lazy fallback fires just for meters
+  // whose export meterName is missing from the Retail Prices API (e.g. the GPv1
+  // capacity meter "General Purpose Data Stored"), avoiding a doubling of API traffic.
+  if (target === "gpv1" && row.meterId && meterIdPattern.test(row.meterId)) {
+    const wantedMeterId = row.meterId.trim().toLowerCase();
+    const alreadyPresent = textResult.candidates.some((candidate) => candidate.meterId.trim().toLowerCase() === wantedMeterId);
+    if (!alreadyPresent) {
+      const idParams = new URLSearchParams({
+        region: row.region,
+        currency: row.currency,
+        meterId: row.meterId,
+        refresh: String(refresh)
+      });
+      const idKey = `${JSON.stringify({ region: row.region, currency: row.currency, meterId: row.meterId })}:${refresh ? "refresh" : "cached"}`;
+      const byId = await pricingFetch(idParams, idKey, row.meterName, runCache);
+      if (byId.candidates.length > 0) {
+        return byId;
+      }
+    }
+  }
+
+  return textResult;
+}
+
+// Cap how many usage rows are priced at once. Static Web Apps managed Functions
+// have limited concurrency, so firing every row's lookups simultaneously can
+// overwhelm the backend and surface as "Pricing lookup failed". A small pool keeps
+// throughput high while staying well within backend limits.
+const MAX_PRICING_CONCURRENCY = 6;
+
+async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let cursor = 0;
+  async function worker(): Promise<void> {
+    while (cursor < items.length) {
+      const index = cursor++;
+      results[index] = await fn(items[index], index);
+    }
+  }
+  const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, () => worker());
+  await Promise.all(workers);
+  return results;
 }
 
 function downloadFile(filename: string, content: string, type: string): void {
@@ -1290,7 +1320,7 @@ export default function App() {
     // are ignored here so they never surface on the Pricing Review page or in exports.
     const priceableRows = rows.filter((row) => row.modeled);
 
-    const nextResults = await Promise.all(priceableRows.map(async (row) => {
+    const nextResults = await mapWithConcurrency(priceableRows, MAX_PRICING_CONCURRENCY, async (row) => {
       if (!row.included || !row.modeled) {
         const unmatched = { confidence: "Unmatched" as const, score: 0, candidates: [], notes: row.notes };
         return calculateResultLine(row, unmatched, unmatched, discounts);
@@ -1313,7 +1343,7 @@ export default function App() {
         const fallback = { confidence: "Unmatched" as const, score: 0, candidates: [], notes: [error instanceof Error ? error.message : "Pricing lookup failed."] };
         return calculateResultLine(row, fallback, fallback, discounts);
       }
-    }));
+    });
 
     setPricingRefreshedAt(latestRefresh);
     setResults(nextResults);
