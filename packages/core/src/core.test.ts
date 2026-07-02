@@ -174,6 +174,19 @@ describe("classification and matching", () => {
     expect(matchMeter(capacity, [storageV2HotMeter, storageV2CoolMeter], "gpv2").meter?.meterId).toBe("storage-v2-cool");
   });
 
+  it("defaults a tier-less GPv2 capacity row to the Hot conversion tier", () => {
+    // Real GPv1 exports have no access tier (product "General Block Blob", meter
+    // "LRS Data Stored"). The GPv2 side must model the default Hot conversion tier
+    // rather than fuzzy-matching to a cheaper Archive/Cool meter.
+    const tierless: UsageLineItem = { ...usage, meterName: "LRS Data Stored", skuName: "Standard LRS", accessTier: undefined };
+    const archive = meter({ productName: "General Block Blob v2", meterName: "Archive LRS Data Stored", skuName: "Archive LRS", meterId: "v2-archive", retailPrice: 0.002, unitPrice: 0.002 });
+    const hot = meter({ productName: "General Block Blob v2", meterName: "Hot LRS Data Stored", skuName: "Hot LRS", meterId: "v2-hot", retailPrice: 0.02, unitPrice: 0.02 });
+    const match = matchMeter(tierless, [archive, hot], "gpv2");
+
+    expect(match.confidence).not.toBe("Unmatched");
+    expect(match.meter?.meterId).toBe("v2-hot");
+  });
+
   it("pins the GPv1 price to the exact billed meter id from the export", () => {
     const billed = { ...usage, meterId: "abc-123" };
     const candidates = [
@@ -326,14 +339,18 @@ describe("CSV parsing", () => {
   it("parses the sample CSV and excludes non-Blob lines by default", () => {
     const result = parseUsageCsv(createSampleCsv());
     expect(result.errors).toEqual([]);
-    expect(result.rows).toHaveLength(11);
-    expect(result.rows.filter((row) => row.modeled)).toHaveLength(8);
-    expect(result.rows.filter((row) => !row.modeled)).toHaveLength(3);
-    expect(result.rows.find((row) => row.meterName === "Data Geo Priority Replication GRS Data Replicated")?.modeled).toBe(true);
-    expect(result.rows.find((row) => row.meterName === "Blob Inventory")?.notes.join(" ")).toContain("Requires Review");
+    expect(result.rows).toHaveLength(9);
+    expect(result.rows.filter((row) => row.modeled)).toHaveLength(5);
+    expect(result.rows.filter((row) => !row.modeled)).toHaveLength(4);
+    // The capacity row carries the billed meter id and derives its account from the ARM resource id.
+    const capacity = result.rows.find((row) => row.meterName === "LRS Data Stored" && row.modeled);
+    expect(capacity?.meterId).toBe("c1635534-1c1d-4fc4-b090-88fc2672ef87");
+    expect(extractStorageAccountName(capacity?.storageAccountName)).toBe("prodgpv1blob");
     expect(result.rows.find((row) => row.product === "Azure Files")?.modeled).toBe(false);
     expect(result.rows.find((row) => row.product === "Queue Storage")?.modeled).toBe(false);
     expect(result.rows.find((row) => row.product === "Table Storage")?.modeled).toBe(false);
+    // A look-alike Azure SQL "General Purpose Data Stored" meter is not blob capacity.
+    expect(result.rows.find((row) => row.serviceName === "Microsoft.Sql")?.modeled).toBe(false);
   });
 
   it("accepts common Azure Cost Management export column names", () => {
@@ -467,11 +484,11 @@ describe("extractStorageAccountName", () => {
     expect(extractStorageAccountName("env=prod;team=storage")).toBeUndefined();
   });
 
-  it("prefers the account tag value over the resource path in the sample CSV", () => {
+  it("derives the sample CSV account from its ARM resource id", () => {
     const result = parseUsageCsv(createSampleCsv());
     const firstModeled = result.rows.find((row) => row.modeled);
 
-    expect(extractStorageAccountName(firstModeled?.storageAccountName)).toBe("prodgpv1");
+    expect(extractStorageAccountName(firstModeled?.storageAccountName)).toBe("prodgpv1blob");
   });
 });
 

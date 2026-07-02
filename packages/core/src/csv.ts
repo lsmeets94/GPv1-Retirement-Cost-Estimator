@@ -161,175 +161,121 @@ export function parseUsageCsv(csvText: string): CsvParseResult {
 }
 
 export function createSampleCsv(): string {
+  // A realistic Azure Cost Management / usage export for a single General Purpose
+  // v1 storage account. It mirrors a real download: every row carries the billed
+  // Meter id (a real Azure Retail Prices meter GUID) and the ARM Resource id that
+  // identifies the account, and the account is *not* named in the Tags column
+  // (those are governance tags) so the tool must derive it from the Resource id.
+  // The General Block Blob rows model to the default StorageV2 (Hot) conversion
+  // tier. The trailing rows are deliberately out of scope — Azure Files, Queue and
+  // Table storage plus a look-alike Azure SQL "General Purpose Data Stored" meter —
+  // so the sample also demonstrates exactly what the estimator ignores.
+  const header = [
+    "Billing period",
+    "Service name",
+    "Product",
+    "Meter category",
+    "Meter subcategory",
+    "Meter name",
+    "Meter id",
+    "SKU name",
+    "Region",
+    "Quantity",
+    "Unit",
+    "Unit price",
+    "Cost",
+    "Currency",
+    "Resource id",
+    "Tags or storage account name"
+  ];
+  const blobResourceId =
+    "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-prod-storage/providers/Microsoft.Storage/storageAccounts/prodgpv1blob";
+  const governanceTags = "team=payments;costcenter=CC1042;env=production";
+  const blobRow = (
+    meterName: string,
+    meterId: string,
+    quantity: string,
+    unit: string,
+    unitPrice: string,
+    cost: string
+  ) =>
+    [
+      "2026-05",
+      "Microsoft.Storage",
+      "General Block Blob",
+      "Storage",
+      "General Block Blob",
+      meterName,
+      meterId,
+      "Standard LRS",
+      "eastus",
+      quantity,
+      unit,
+      unitPrice,
+      cost,
+      "USD",
+      blobResourceId,
+      governanceTags
+    ].join(",");
   const rows = [
-    requiredCsvColumns.join(","),
+    header.join(","),
+    // GPv1 capacity billed as General Block Blob "LRS Data Stored".
+    blobRow("LRS Data Stored", "c1635534-1c1d-4fc4-b090-88fc2672ef87", "1024", "1 GB/Month", "0.0208", "21.30"),
+    // GPv1 read transactions.
+    blobRow("Read Operations", "40551b4c-e8be-48ed-b70b-f8d25c7de724", "500", "10K", "0.0004", "0.20"),
+    // GPv1 write transactions.
+    blobRow("LRS Write Operations", "211e620c-ebcf-4db5-a7fd-996abebe9546", "60", "10K", "0.05", "3.00"),
+    // GPv1 list / create container transactions.
+    blobRow("LRS List and Create Container Operations", "f8c187bb-5a47-46ae-b874-f186d207fff4", "8", "10K", "0.05", "0.40"),
+    // GPv1 remaining transactions.
+    blobRow("All Other Operations", "40551b4c-e8be-48ed-b70b-f8d25c7de724", "300", "10K", "0.0004", "0.12"),
+    // Out of scope: Azure Files capacity — ignored (not blob storage).
     [
       "2026-05",
-      "Storage",
-      "General Block Blob v1",
-      "Storage",
-      "Blob Storage",
-      "GRS Data Stored",
-      "Standard GRS",
-      "eastus",
-      "1024",
-      "1 GB/Month",
-      "0.0528",
-      "54.07",
-      "USD",
-      "account=prodgpv1;scenario=capacity"
-    ].join(","),
-    [
-      "2026-05",
-      "Storage",
-      "General Block Blob v1",
-      "Storage",
-      "Blob Storage",
-      "Write Operations",
-      "Standard GRS",
-      "eastus",
-      "25",
-      "10K",
-      "0.00036",
-      "0.01",
-      "USD",
-      "account=prodgpv1;scenario=transactions"
-    ].join(","),
-    [
-      "2026-05",
-      "Storage",
-      "General Block Blob v1",
-      "Storage",
-      "Blob Storage",
-      "Read Operations",
-      "Standard GRS",
-      "eastus",
-      "100",
-      "10K",
-      "0.00036",
-      "0.04",
-      "USD",
-      "account=prodgpv1;scenario=transactions"
-    ].join(","),
-    [
-      "2026-05",
-      "Storage",
-      "General Block Blob v1",
-      "Storage",
-      "Blob Storage",
-      "List and Create Container Operations",
-      "Standard GRS",
-      "eastus",
-      "2",
-      "10K",
-      "0.00036",
-      "0.00",
-      "USD",
-      "account=prodgpv1;scenario=list"
-    ].join(","),
-    [
-      "2026-05",
-      "Storage",
-      "General Block Blob v1",
-      "Storage",
-      "Blob Storage",
-      "Data Retrieval",
-      "Standard GRS",
-      "eastus",
-      "50",
-      "1 GB",
-      "0",
-      "0",
-      "USD",
-      "account=prodgpv1;scenario=retrieval"
-    ].join(","),
-    [
-      "2026-05",
-      "Storage",
-      "General Block Blob v1",
-      "Storage",
-      "Blob Storage",
-      "Data Write",
-      "Standard GRS",
-      "eastus",
-      "25",
-      "1 GB",
-      "0",
-      "0",
-      "USD",
-      "account=prodgpv1;scenario=write"
-    ].join(","),
-    [
-      "2026-05",
-      "Storage",
-      "Blob Features",
-      "Storage",
-      "Blob Storage",
-      "Data Geo Priority Replication GRS Data Replicated",
-      "Data Geo Priority Replication GRS",
-      "eastus",
-      "25",
-      "1 GB",
-      "0",
-      "0",
-      "USD",
-      "account=prodgpv1;scenario=gpv2-only-replication"
-    ].join(","),
-    [
-      "2026-05",
-      "Storage",
-      "Blob Features",
-      "Storage",
-      "Blob Storage",
-      "Blob Inventory",
-      "Blob Inventory",
-      "eastus",
-      "1",
-      "1M",
-      "0",
-      "0",
-      "USD",
-      "account=prodgpv1;scenario=requires-review"
-    ].join(","),
-    [
-      "2026-05",
-      "Storage",
+      "Microsoft.Storage",
       "Azure Files",
       "Storage",
       "Files",
       "LRS Data Stored",
+      "",
       "Standard LRS",
       "eastus",
-      "500",
+      "200",
       "1 GB/Month",
       "0.06",
-      "30",
+      "12.00",
       "USD",
-      "account=fileacct;scenario=excluded-files"
+      "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-prod-storage/providers/Microsoft.Storage/storageAccounts/prodfiles01",
+      "team=payments;env=production"
     ].join(","),
+    // Out of scope: Queue storage transactions — ignored.
     [
       "2026-05",
-      "Storage",
+      "Microsoft.Storage",
       "Queue Storage",
       "Storage",
-      "Queues",
-      "Queue Operations",
+      "Queue",
+      "LRS Class 1 Operations",
+      "",
       "Standard LRS",
       "eastus",
-      "10",
+      "12",
       "10K",
       "0.004",
-      "0.04",
+      "0.05",
       "USD",
-      "account=queueacct;scenario=excluded-queues"
+      "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-prod-storage/providers/Microsoft.Storage/storageAccounts/prodqueue01",
+      "team=messaging;env=production"
     ].join(","),
+    // Out of scope: Table storage transactions — ignored.
     [
       "2026-05",
-      "Storage",
+      "Microsoft.Storage",
       "Table Storage",
       "Storage",
-      "Tables",
-      "Table Operations",
+      "Table",
+      "Read Operations",
+      "",
       "Standard LRS",
       "eastus",
       "8",
@@ -337,7 +283,29 @@ export function createSampleCsv(): string {
       "0.004",
       "0.03",
       "USD",
-      "account=tableacct;scenario=excluded-tables"
+      "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-prod-storage/providers/Microsoft.Storage/storageAccounts/prodtable01",
+      "team=catalog;env=production"
+    ].join(","),
+    // Out of scope: a look-alike Azure SQL Database "General Purpose Data Stored"
+    // meter. The name trips the "data stored" hint, but the service identity
+    // (Microsoft.Sql / SQL Database) means it is not blob capacity — ignored.
+    [
+      "2026-05",
+      "Microsoft.Sql",
+      "SQL Database Single/Elastic Pool General Purpose - Storage",
+      "SQL Database",
+      "General Purpose",
+      "General Purpose Data Stored",
+      "",
+      "",
+      "eastus",
+      "100",
+      "1 GB/Month",
+      "0.115",
+      "11.50",
+      "USD",
+      "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-data/providers/Microsoft.Sql/servers/sqlmove/databases/appdb",
+      "team=payments;env=production"
     ].join(",")
   ];
   return rows.join("\n");

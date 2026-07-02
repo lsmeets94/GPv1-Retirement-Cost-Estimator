@@ -69,8 +69,7 @@ function usageIsTierSpecific(item: UsageLineItem): boolean {
   const text = normalize(item.meterName);
   return [
     "data stored",
-    "write operations",
-    "read operations",
+    "operations",
     "data retrieval",
     "data write",
     "early delete",
@@ -101,10 +100,14 @@ function scoreCandidate(item: UsageLineItem, meter: PriceMeter, target: "gpv1" |
   }
 
   if (target === "gpv2") {
-    const selectedTier = item.accessTier;
+    // GPv1 source accounts do not expose an access tier, so a tier-specific meter
+    // with no tier on the usage row models to the default StorageV2 conversion tier
+    // (Hot). Without this, tier-less rows fuzzy-match to Archive/Cool/Cold and produce
+    // nonsensical comparisons (e.g. a Hot workload priced against Archive).
+    const selectedTier = item.accessTier ?? (usageIsTierSpecific(item) ? "Hot" : undefined);
     const tier = candidateTier(meter);
     if (selectedTier && usageIsTierSpecific(item) && tier && tier !== selectedTier) {
-      return { score: -1000, notes: [`Excluded ${meter.meterName}; selected StorageV2 tier is ${selectedTier}.`] };
+      return { score: -1000, notes: [`Excluded ${meter.meterName}; modeled StorageV2 tier is ${selectedTier}.`] };
     }
 
     if (storageV2Only && productName === "blob features") score += 75;
@@ -129,7 +132,7 @@ function scoreCandidate(item: UsageLineItem, meter: PriceMeter, target: "gpv1" |
   else if (redundancy && candidateText.includes(normalize(redundancy))) score += 10;
   else if (redundancy) notes.push(`Could not confirm ${redundancy} redundancy.`);
 
-  const tier = target === "gpv1" ? "Hot" : item.accessTier || inferAccessTier(sourceText);
+  const tier = target === "gpv1" ? "Hot" : (item.accessTier ?? (usageIsTierSpecific(item) ? "Hot" : inferAccessTier(sourceText)));
   if (target === "gpv1") {
     score += 10;
     notes.push("GPv1 is modeled from General Block Blob meters; GPv1 accounts do not expose access tiers.");
