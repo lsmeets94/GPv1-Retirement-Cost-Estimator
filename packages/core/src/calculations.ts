@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
 import { isStorageV2OnlyUsage } from "./mapping";
 import type { Confidence, CostSummary, DiscountSettings, MeterMatch, ResultLineItem, UsageLineItem } from "./types";
 

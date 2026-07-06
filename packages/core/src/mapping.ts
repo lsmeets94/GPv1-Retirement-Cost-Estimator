@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
 import type { AccessTier, Confidence, MeterMatch, PriceMeter, Redundancy, UsageLineItem } from "./types";
 
 const blobHints = ["blob", "block blob", "page blob", "data stored", "hot", "cool", "cold", "archive", "replication", "data replicated"];

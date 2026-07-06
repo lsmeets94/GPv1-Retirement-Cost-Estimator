@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
 export * from "./calculations";
 export * from "./classification";
 export * from "./csv";

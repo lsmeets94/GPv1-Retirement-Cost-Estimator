@@ -1,6 +1,6 @@
 # GPv1 to GPv2 Cost Estimator
 
-## Version 1.1 Enhancement PRD
+## Version 0.2 Enhancement PRD
 
 ### Status
 
@@ -8,11 +8,11 @@ Enhancement Release
 
 ### Current Production Version
 
-Version 1.0
+Version 0.1
 
 ### Target Release
 
-Version 1.1
+Version 0.2
 
 ---
 
@@ -22,9 +22,9 @@ The current GPv1 to GPv2 Cost Estimator successfully provides customers with a m
 
 User testing has identified several opportunities to improve usability, transparency, trustworthiness, and customer readiness.
 
-Version 1.1 focuses on improving the user experience, increasing pricing transparency, reducing user input complexity, and producing customer-ready outputs suitable for migration discussions.
+Version 0.2 focuses on improving the user experience, increasing pricing transparency, reducing user input complexity, and producing customer-ready outputs suitable for migration discussions.
 
-No fundamental pricing methodology changes are planned for Version 1.1.
+No fundamental pricing methodology changes are planned for Version 0.2.
 
 ---
 
@@ -466,7 +466,7 @@ No hidden pricing assumptions.
 
 # Acceptance Criteria
 
-Version 1.1 is complete when:
+Version 0.2 is complete when:
 
 * Guided workflow implemented
 * Simple Mode implemented

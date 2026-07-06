@@ -8,7 +8,7 @@
 
 ### Status
 
-Proposed production-readiness plan. This document describes the minimum hardening work recommended before broadly publishing the application on the public web.
+Implemented. The P0 launch blockers and P1 public-release requirements described in this document have shipped on `main` as part of the 1.0 release (dependency remediation, security headers, API validation and throttling, JSON import limits, CI with production dependency audit, error boundaries, Application Insights wiring, Dependabot automation, and privacy/local-storage disclosure). CodeQL static analysis (a P2 item) is also enabled. Remaining open work is limited to the P2 follow-up backlog below. This document is retained as the hardening record and rationale.
 
 ### Current Product Baseline
 
@@ -83,7 +83,7 @@ This hardening release will not introduce:
 
 # 4. Release Gates
 
-The application should not be promoted as broadly public until all P0 and P1 items are complete.
+All P0 and P1 items below are complete as of the 1.0 release; the application is cleared for broad public release. The P2 items remain as optional follow-up hardening.
 
 ## P0 Launch Blockers
 
@@ -581,4 +581,4 @@ The application is production-ready for broad public release when:
 * CI blocks insecure or broken builds.
 * Production monitoring and rollback guidance exist.
 
-Until then, the recommended release posture is limited preview or internal demo.
+These acceptance criteria are met as of the 1.0 release, so the current release posture is broad public release. The P2 follow-up items remain optional hardening.

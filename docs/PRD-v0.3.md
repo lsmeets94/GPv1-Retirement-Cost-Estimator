@@ -4,15 +4,15 @@
 
 ### Version
 
-1.2
+0.3
 
 ### Status
 
-Implemented on `master` as part of the current GPv1 to GPv2 Billing Impact Estimator release.
+Implemented on `main` as part of the current GPv1 to GPv2 Billing Impact Estimator release.
 
 ### Depends On
 
-Successful completion of Version 1.1
+Successful completion of Version 0.2
 
 ### Theme
 
@@ -22,11 +22,11 @@ Customer Data Ingestion and Migration Planning
 
 # 1. Executive Summary
 
-Version 1.0 established a functional GPv1 to GPv2 cost estimator.
+Version 0.1 established a functional GPv1 to GPv2 cost estimator.
 
-Version 1.1 improved trust, transparency, explainability, and customer-facing reporting.
+Version 0.2 improved trust, transparency, explainability, and customer-facing reporting.
 
-Version 1.2 reduced customer effort by adding structured CSV ingestion, classification, migration readiness, workload templates, scenario comparison, save/load, and customer-ready exports.
+Version 0.3 reduced customer effort by adding structured CSV ingestion, classification, migration readiness, workload templates, scenario comparison, save/load, and customer-ready exports.
 
 The implemented application is a migration assessment tool for Blob Storage GPv1 account-kind `Storage` to GPv2 account-kind `StorageV2` estimation. It does not authenticate to Azure, discover subscriptions, or retrieve private customer billing data.
 
@@ -56,7 +56,7 @@ Improve customer confidence. **Implemented through visible pricing source, prici
 
 Support larger environments. **Partially implemented. CSV import can process many rows, but there is no multi-file import or background job processing.**
 
-Prepare for future portfolio analysis. **Implemented and extended in Version 1.3.**
+Prepare for future portfolio analysis. **Implemented and extended in Version 0.4.**
 
 ---
 
@@ -387,7 +387,7 @@ Supported:
 * Export customer-ready PDF.
 * Browser session metadata for pricing refresh timestamp.
 
-Extended in Version 1.3:
+Extended in Version 0.4:
 
 * Named portfolio assessments.
 * Portfolio JSON import/export.
@@ -446,7 +446,7 @@ Known limitations:
 
 # 14. Acceptance Criteria
 
-Version 1.2 is complete when:
+Version 0.3 is complete when:
 
 * Azure Cost Management-style CSV support implemented. **Complete, CSV only.**
 * Intelligent classification implemented. **Complete for Blob Storage-focused scope.**

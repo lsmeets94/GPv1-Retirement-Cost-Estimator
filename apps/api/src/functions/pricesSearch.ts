@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
 import { azureArmRegions, buildRetailPricesUrl, fetchAllRetailPricePages, type PriceMeter, type PricingSearchRequest, type PricingSearchResponse } from "@gpv2-estimator/core";
 

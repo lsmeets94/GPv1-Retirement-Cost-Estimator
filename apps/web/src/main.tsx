@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
 import { FluentProvider, webLightTheme } from "@fluentui/react-components";
 import React, { Component, type ErrorInfo, type ReactNode } from "react";
 import ReactDOM from "react-dom/client";

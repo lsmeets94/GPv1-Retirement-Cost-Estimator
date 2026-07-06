@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
 export const azureArmRegions = [
   { name: "Australia Central", armRegionName: "australiacentral" },
   { name: "Australia Central 2", armRegionName: "australiacentral2" },

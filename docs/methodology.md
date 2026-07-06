@@ -68,7 +68,7 @@ The app shows list-price and discount-adjusted comparisons separately.
 
 ## Portfolio Assessment
 
-Version 1.3 adds a browser-local portfolio repository for saved estimates. Portfolio totals are calculated from active assessments only; archived assessments remain available in the repository but are excluded from portfolio totals.
+Version 0.4 adds a browser-local portfolio repository for saved estimates. Portfolio totals are calculated from active assessments only; archived assessments remain available in the repository but are excluded from portfolio totals.
 
 Each assessment receives:
 
@@ -81,4 +81,4 @@ Each assessment receives:
 
 Priority considers annual impact, capacity, confidence, risk, and complexity. Risk considers large capacity, cost increases, low confidence, unmatched rows, review rows, unsupported rows, retrieval signals, and replication dependence.
 
-Portfolio JSON export/import is the portable record for the assessment repository. No Azure sign-in, database, subscription discovery, Azure Resource Graph, or automated migration execution is used in v1.3.
+Portfolio JSON export/import is the portable record for the assessment repository. No Azure sign-in, database, subscription discovery, Azure Resource Graph, or automated migration execution is used in v0.4.
