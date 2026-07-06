@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
 import type { PricingSearchRequest } from "./types";
 
 const API_VERSION = "2023-01-01-preview";

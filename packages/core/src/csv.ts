@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
 import Papa from "papaparse";
 import { classifyUsage } from "./classification";
 import { inferAccessTier, inferRedundancy, isBlobStorageLine } from "./mapping";

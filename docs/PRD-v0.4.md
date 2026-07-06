@@ -4,15 +4,15 @@
 
 ### Version
 
-1.3
+0.4
 
 ### Status
 
-Implemented on `master` as the current portfolio assessment release.
+Implemented on `main` as the current portfolio assessment release. This 0.4 feature set is the basis for the first public release, published as package version `1.0.0`.
 
 ### Depends On
 
-Successful completion of Version 1.2
+Successful completion of Version 0.3
 
 ### Theme
 
@@ -22,17 +22,17 @@ Portfolio Assessment and Customer Engagement
 
 # 1. Executive Summary
 
-Version 1.0 introduced GPv1 to GPv2 cost estimation.
+Version 0.1 introduced GPv1 to GPv2 cost estimation.
 
-Version 1.1 improved transparency, explainability, and reporting.
+Version 0.2 improved transparency, explainability, and reporting.
 
-Version 1.2 introduced customer data ingestion, migration planning, scenario comparison, and recommendation capabilities.
+Version 0.3 introduced customer data ingestion, migration planning, scenario comparison, and recommendation capabilities.
 
-Version 1.3 expands the platform from individual storage account assessments to portfolio-level migration analysis.
+Version 0.4 expands the platform from individual storage account assessments to portfolio-level migration analysis.
 
 The implemented release enables Microsoft specialists, account teams, and customers to save multiple completed estimates into a browser-local portfolio, prioritize migration opportunities, identify risk areas, compare assessments, manage a customer engagement workspace, and export executive-ready portfolio summaries.
 
-Version 1.3 transforms the solution from a single-assessment migration planning tool into a browser-local portfolio assessment workspace.
+Version 0.4 transforms the solution from a single-assessment migration planning tool into a browser-local portfolio assessment workspace.
 
 ---
 
@@ -438,7 +438,7 @@ Supported actions:
 * Export portfolio CSV.
 * Export portfolio PDF.
 
-UX refinements implemented after initial v1.3:
+UX refinements implemented after initial v0.4:
 
 * A top Results-page next-step panel prompts users to add the current estimate to the portfolio.
 * If the current estimate is already saved, the action changes to View in portfolio.
@@ -469,7 +469,7 @@ Users can manage assessment history. **Implemented.**
 
 Current release status:
 
-* v1.3 is implemented and merged to `master`.
+* v0.4 is implemented and merged to `main`.
 * The app is deployable through Azure Static Web Apps with managed Azure Functions.
 * Pricing lookup uses the unauthenticated Azure Retail Prices API through the server-side API.
 * Pricing lookup is cached in memory/session and deduplicated per calculation run for better performance.
@@ -510,7 +510,7 @@ Known limitations:
 
 # 15. Acceptance Criteria
 
-Version 1.3 is complete when:
+Version 0.4 is complete when:
 
 * Portfolio import implemented. **Complete through current estimate, estimate JSON, and portfolio JSON.**
 * Portfolio Dashboard implemented. **Complete.**

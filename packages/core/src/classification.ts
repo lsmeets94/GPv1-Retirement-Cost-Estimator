@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
 import { isBlobStorageLine } from "./mapping";
 import type { UsageClassification, UsageLineItem } from "./types";
 

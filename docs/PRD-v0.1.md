@@ -4,7 +4,7 @@
 
 ### Version
 
-1.0
+0.1
 
 ### Author
 
@@ -20,7 +20,7 @@ June 12, 2026
 
 ### Source of Truth
 
-The implemented application is the source of truth for this PRD. Requirements below describe the current Version 1.0 product unless explicitly marked as partially implemented, not implemented, or future.
+The implemented application is the source of truth for this PRD. Requirements below describe the current Version 0.1 product unless explicitly marked as partially implemented, not implemented, or future.
 
 ---
 
@@ -38,7 +38,7 @@ Many customers do not understand the financial impact of this migration. While G
 
 The GPv1 to GPv2 Cost Estimator provides a simple web-based experience that enables customers, account teams, and Microsoft specialists to estimate the monthly and annual financial impact of migrating from GPv1 to GPv2 using public Azure list pricing.
 
-The current application is a deployed Version 1.0 estimator focused on Azure Blob Storage usage for account kind `Storage` to account kind `StorageV2` conversions. It uses the unauthenticated Azure Retail Prices API through a lightweight Azure Functions backend, exposes matched meters and confidence labels, supports manual entry and structured CSV usage input, and exports customer-ready CSV and PDF summaries.
+The current application is a deployed Version 0.1 estimator focused on Azure Blob Storage usage for account kind `Storage` to account kind `StorageV2` conversions. It uses the unauthenticated Azure Retail Prices API through a lightweight Azure Functions backend, exposes matched meters and confidence labels, supports manual entry and structured CSV usage input, and exports customer-ready CSV and PDF summaries.
 
 The application is an estimator, not a billing oracle. It does not ingest Azure Cost Management data, customer contracts, taxes, reservations, credits, or private prices.
 
@@ -48,7 +48,7 @@ The application is an estimator, not a billing oracle. It does not ingest Azure 
 
 ## Current Release
 
-Version 1.0 is implemented and deployed through Azure Static Web Apps with a managed Azure Functions API.
+Version 0.1 is implemented and deployed through Azure Static Web Apps with a managed Azure Functions API.
 
 ## Deployment Model
 
@@ -299,7 +299,7 @@ Implemented automatically for GRS, RA-GRS, GZRS, and RA-GZRS. The estimator deri
 Planned but not implemented in manual mode:
 
 * Manual entry for every optional Blob feature meter.
-* Manual SFTP, index tag, blob inventory, named encryption scope, point-in-time restore, smart tier, or object replication inputs. These were intentionally removed from Version 1.0 manual mode because they are not core GPv1 to GPv2 conversion inputs for most customers.
+* Manual SFTP, index tag, blob inventory, named encryption scope, point-in-time restore, smart tier, or object replication inputs. These were intentionally removed from Version 0.1 manual mode because they are not core GPv1 to GPv2 conversion inputs for most customers.
 
 ---
 
@@ -832,7 +832,7 @@ Session Storage
 
 Optional Azure Storage for future persistence
 
-Status: Implemented only for browser/session metadata and API memory cache. No persistent database exists in Version 1.0.
+Status: Implemented only for browser/session metadata and API memory cache. No persistent database exists in Version 0.1.
 
 ---
 
@@ -968,7 +968,7 @@ If multiple public price tiers share the same meter ID and unit of measure, the 
 
 ## Early Deletion Formula
 
-Hot tier has no early deletion charge in Version 1.0.
+Hot tier has no early deletion charge in Version 0.1.
 
 Cool, Cold, and Archive use these minimum retention periods:
 
@@ -1114,11 +1114,11 @@ This section identifies differences between the original PRD intent and the curr
 
 ## Implemented Differently
 
-* The original PRD listed broad storage-account concepts. The implementation intentionally narrows Version 1.0 to Blob Storage usage only.
+* The original PRD listed broad storage-account concepts. The implementation intentionally narrows Version 0.1 to Blob Storage usage only.
 * Confidence labels are categorical and threshold-based; the UI does not display numeric confidence percentages.
 * Region options are a fixed Azure ARM region list, while redundancy/tier options are dynamically filtered from public StorageV2 capacity meters.
 * PDF export is a compact customer summary, not a full report rendering of the entire results screen.
-* Manual mode removed optional feature inputs such as SFTP and object replication to keep Version 1.0 focused on normal GPv1 conversion modeling.
+* Manual mode removed optional feature inputs such as SFTP and object replication to keep Version 0.1 focused on normal GPv1 conversion modeling.
 * Missing pricing does not block the whole estimate; affected rows are visible, marked unmatched, and excluded by default.
 
 ## Planned but Not Built
@@ -1135,7 +1135,7 @@ This section identifies differences between the original PRD intent and the curr
 * App Service deployment automation.
 * Server-side PDF generation.
 
-## Removed or No Longer Relevant for Version 1.0
+## Removed or No Longer Relevant for Version 0.1
 
 * Manual SFTP entry.
 * Manual named encryption scope entry.
@@ -1144,7 +1144,7 @@ This section identifies differences between the original PRD intent and the curr
 * Manual smart tier monitoring entry.
 * Manual priority object replication entry.
 
-These may still appear if supplied in CSV data, but they are not first-class manual inputs for the Version 1.0 conversion workflow.
+These may still appear if supplied in CSV data, but they are not first-class manual inputs for the Version 0.1 conversion workflow.
 
 ---
 
@@ -1182,9 +1182,9 @@ These may still appear if supplied in CSV data, but they are not first-class man
 
 ---
 
-# 17. Version 1.1 Recommendations
+# 17. Version 0.2 Recommendations
 
-The separate `docs/PRD-v1.1.md` file is not modified by this Version 1.0 PRD update. The recommendations below summarize future enhancement themes for planning only.
+The separate `docs/PRD-v0.2.md` file is not modified by this Version 0.1 PRD update. The recommendations below summarize future enhancement themes for planning only.
 
 ## Usability
 

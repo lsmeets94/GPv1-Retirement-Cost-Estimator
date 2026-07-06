@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
 export type CurrencyCode = "USD" | "EUR" | "GBP" | "CAD" | "AUD" | string;
 
 export type Redundancy = "LRS" | "ZRS" | "GRS" | "RA-GRS" | "GZRS" | "RA-GZRS";

@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
 import type { ManualUsageInput, UsageLineItem } from "./types";
 
 const unitByCategory = {
