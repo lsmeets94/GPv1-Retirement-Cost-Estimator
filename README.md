@@ -9,7 +9,7 @@ Azure-hostable web app for estimating the billing impact of upgrading Azure Stor
 
 > [!IMPORTANT]
 > This tool is an estimator only. It uses public list pricing and modeled assumptions to compare GPv1 and GPv2 costs, so results are directional and actual charges may vary. Actual costs can differ based on factors such as discounts, negotiated pricing, taxes, credits, reservations, support plans, marketplace charges, and other customer-specific billing conditions.
-
+test
 > [!TIP]
 > 📖 **Ready to deploy?** See [docs/deployment.md](./docs/deployment.md) for all deployment options including one-click Azure deployment, manual ARM template deployment, and GitHub Actions setup.
 
